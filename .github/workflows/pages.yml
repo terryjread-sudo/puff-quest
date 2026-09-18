@@ -1,0 +1,48 @@
+name: Deploy Neon Twice
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Export Godot Web build
+    runs-on: ubuntu-24.04
+    container:
+      image: barichello/godot-ci:4.6.3
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare Godot export templates
+        run: |
+          mkdir -p "$HOME/.config" "$HOME/.local/share/godot/export_templates"
+          if [ -d /root/.config/godot ]; then cp -a /root/.config/godot "$HOME/.config/"; fi
+          if [ -d /root/.local/share/godot/export_templates/4.6.3.stable ]; then cp -a /root/.local/share/godot/export_templates/4.6.3.stable "$HOME/.local/share/godot/export_templates/"; fi
+          godot --headless --version
+
+      - name: Export Web
+        run: |
+          mkdir -p build/godot
+          godot --headless --verbose --path . --export-release "Web" "$PWD/build/godot/index.html"
+          printf 'puffo.kaishi.uk\n' > build/godot/CNAME
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/godot
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
