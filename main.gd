@@ -232,8 +232,11 @@ func _sync_level() -> void:
 	level["objects"] = objects; level["triggers"] = triggers; level = LevelData.validate(level); objects = level["objects"]; triggers = level["triggers"]
 
 func _export_level() -> void:
-	var json := JSON.stringify(level, "  "); DisplayServer.clipboard_set(json)
-	if OS.has_feature("web"): JavaScriptBridge.eval("const b=new Blob([%s],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='neon-twice-level.json';a.click();" % JSON.stringify(json))
+	var json := JSON.stringify(level, "  ")
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("const b=new Blob([%s],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='neon-twice-level.json';a.click();" % JSON.stringify(json))
+	else:
+		DisplayServer.clipboard_set(json)
 	message = "LEVEL EXPORTED TO CLIPBOARD"; message_time = 1.5
 
 func _import_level() -> void:
