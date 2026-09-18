@@ -116,6 +116,12 @@ func _run_step(delta: float) -> void:
 	player += velocity * delta
 	if gravity_sign > 0.0 and player.y + PLAYER_SIZE.y >= FLOOR_Y: player.y = FLOOR_Y - PLAYER_SIZE.y; velocity.y = 0.0
 	if gravity_sign < 0.0 and player.y <= 90.0: player.y = 90.0; velocity.y = 0.0
+	for platform in objects:
+		if platform["type"] != "moving_platform": continue
+		var platform_rect := _object_rect(platform)
+		if velocity.y >= 0.0 and Rect2(player, PLAYER_SIZE).intersects(platform_rect) and player.y + PLAYER_SIZE.y - platform_rect.position.y < 24.0:
+			player.y = platform_rect.position.y - PLAYER_SIZE.y
+			velocity.y = 0.0
 	if player.y > VIEW.y + 160.0 or player.y < -180.0: _crash("MISSED THE PLATFORM")
 	_update_objects(); _check_objects(); _check_triggers()
 	for i in range(checkpoint_beats.size()):
@@ -305,7 +311,14 @@ func _crash(reason: String) -> void:
 func _finish() -> void:
 	finished = true; message = "RUN COMPLETE"; message_time = 99.0
 
-func _is_grounded() -> bool: return gravity_sign > 0.0 and player.y + PLAYER_SIZE.y >= FLOOR_Y - 1.0
+func _is_grounded() -> bool:
+	if gravity_sign < 0.0: return false
+	if player.y + PLAYER_SIZE.y >= FLOOR_Y - 1.0: return true
+	for platform in objects:
+		if platform["type"] == "moving_platform":
+			var rect := _object_rect(platform)
+			if abs(player.y + PLAYER_SIZE.y - rect.position.y) < 8.0 and player.x + PLAYER_SIZE.x > rect.position.x and player.x < rect.end.x: return true
+	return false
 func _combo_event(label: String) -> void:
 	combo += 1; best_combo = max(best_combo, combo); score += 20 + combo * 2; message = "GOOD " + label; message_time = 0.55
 func _object_x(object: Dictionary) -> float: return START_X + float(object["beat"]) * _beat_width()
