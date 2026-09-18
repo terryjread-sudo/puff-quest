@@ -6,18 +6,26 @@ const read = file => fs.readFileSync(new URL(file, root), 'utf8');
 const project = read('project.godot');
 const scene = read('main.tscn');
 const game = read('main.gd');
+const data = read('level_data.gd');
 
 assert.match(project, /config\/name="Neon Twice"/);
 assert.match(project, /run\/main_scene="res:\/\/main\.tscn"/);
 assert.match(scene, /script = ExtResource/);
-assert.match(game, /const BPM := 120\.0/);
+assert.match(game, /MUSIC_BPM|\["music"\]\["bpm"\]/);
 assert.match(game, /func _start_quiz/);
 assert.match(game, /func _answer_quiz/);
 assert.match(game, /quiz_choices/);
 assert.match(game, /InputEventScreenTouch/);
-assert.match(game, /func _fill_music/);
-assert.match(game, /0\.26 if quiz_active else 1\.0/);
+assert.match(game, /circuit-punk-game-menu\.mp3/);
+assert.match(game, /func _toggle_builder/);
+assert.match(game, /func _export_level/);
+assert.match(game, /func _import_level/);
+assert.match(game, /catapult/);
+assert.match(game, /gravity_portal/);
+assert.match(game, /func _draw_builder/);
+assert.match(data, /static func validate/);
+assert.match(data, /moving_platform/);
+assert.match(data, /quiz/);
 assert.doesNotMatch(game, /Puff Quest|Puffo|Meadow/);
 
 console.log('Neon Twice static checks passed.');
-
