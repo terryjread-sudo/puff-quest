@@ -47,6 +47,7 @@ var message_time := 0.0
 var rng := RandomNumberGenerator.new()
 var music_player: AudioStreamPlayer
 var music_playback: AudioStreamGeneratorPlayback
+var music_started := false
 var music_phase := 0.0
 var music_sample_clock := 0.0
 var audio_enabled := true
@@ -82,6 +83,11 @@ func _setup_music() -> void:
 	stream.buffer_length = 2.0
 	music_player.stream = stream
 	add_child(music_player)
+
+func _ensure_music() -> void:
+	if music_started:
+		return
+	music_started = true
 	music_player.play()
 	music_playback = music_player.get_stream_playback() as AudioStreamGeneratorPlayback
 
@@ -157,6 +163,7 @@ func _input(event: InputEvent) -> void:
 			return
 		if not started:
 			started = true
+			_ensure_music()
 			message = "FIND THE BEAT"
 			message_time = 1.5
 		elif quiz_active:
@@ -166,12 +173,16 @@ func _input(event: InputEvent) -> void:
 	if event.is_action_pressed("dash"):
 		if not started:
 			started = true
+			_ensure_music()
 		elif not quiz_active:
 			_start_dash()
 	if event is InputEventKey and event.pressed and not event.echo and quiz_active:
 		if event.keycode >= KEY_1 and event.keycode <= KEY_3:
 			_answer_quiz(event.keycode - KEY_1)
 	if event is InputEventMouseButton and event.pressed:
+		if not started:
+			started = true
+			_ensure_music()
 		if quiz_active:
 			var choice := _quiz_choice_at(event.position)
 			if choice >= 0:
@@ -182,6 +193,9 @@ func _input(event: InputEvent) -> void:
 			else:
 				_start_dash()
 	if event is InputEventScreenTouch and event.pressed:
+		if not started:
+			started = true
+			_ensure_music()
 		if quiz_active:
 			var touch_choice := _quiz_choice_at(event.position)
 			if touch_choice >= 0:
@@ -199,6 +213,7 @@ func _restart_run() -> void:
 	velocity = Vector2.ZERO
 	camera_x = 0.0
 	started = true
+	_ensure_music()
 	finished = false
 	paused = false
 	quiz_active = false
