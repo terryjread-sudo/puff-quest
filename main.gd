@@ -313,7 +313,7 @@ func _is_grounded() -> bool:
 
 func _combo_event(label: String) -> void:
 	var beat_error := min(beat_clock, BEAT - beat_clock)
-	var perfect := beat_error < 0.075
+	var perfect: bool = beat_error < 0.075
 	combo += 1
 	best_combo = max(best_combo, combo)
 	score += (50 if perfect else 20) + combo * 2
@@ -347,7 +347,7 @@ func _fill_music(delta: float) -> void:
 		var beat_index := int(floor(beat_position)) % 8
 		var kick := exp(-beat_fraction * 22.0) * (0.35 if beat_index % 2 == 0 else 0.0)
 		var hat := exp(-beat_fraction * 55.0) * (0.11 if beat_index % 2 == 1 else 0.04)
-		var note := [55.0, 55.0, 65.41, 73.42, 82.41, 73.42, 65.41, 49.0][beat_index]
+		var note: float = float([55.0, 55.0, 65.41, 73.42, 82.41, 73.42, 65.41, 49.0][beat_index])
 		var bass := sin(TAU * note * t) * 0.13
 		var arp := sin(TAU * note * 4.0 * t) * 0.045
 		var sample := clamp(kick + hat + bass + arp, -0.8, 0.8)
