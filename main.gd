@@ -91,7 +91,7 @@ func _beat_width() -> float:
 	return RUN_SPEED * _music_beat()
 
 func _process(delta: float) -> void:
-	var dt := min(delta, 0.05)
+	var dt: float = min(delta, 0.05)
 	background_time += dt
 	message_time = max(0.0, message_time - dt); flash = max(0.0, flash - dt)
 	_update_particles(dt)
@@ -208,8 +208,8 @@ func _builder_click(pos: Vector2, button: MouseButton) -> void:
 		if pos.x < 160.0: _export_level()
 		elif pos.x < 300.0: _import_level()
 		return
-	var beat := max(0.0, round((camera_x + pos.x - START_X) / _beat_width() * 4.0) / 4.0)
-	var lane := clamp(round((FLOOR_Y - pos.y) / LANE_HEIGHT * 2.0) / 2.0, -1.0, 3.0)
+	var beat: float = max(0.0, round((camera_x + pos.x - START_X) / _beat_width() * 4.0) / 4.0)
+	var lane: float = clamp(round((FLOOR_Y - pos.y) / LANE_HEIGHT * 2.0) / 2.0, -1.0, 3.0)
 	if button == MOUSE_BUTTON_RIGHT: _remove_nearest(beat, lane); return
 	var kind: String = PALETTE[selected_palette]
 	if kind == "timetable": triggers.append({"id": "quiz-custom-%03d" % triggers.size(), "type": "quiz", "beat": beat, "table": 2, "time_limit": 3.2})
@@ -412,6 +412,17 @@ func _draw_kawaii_bone_carnival(pulse: float) -> void:
 		var ghost_x := fmod(120.0 + i * 250.0 + background_time * (18.0 + i * 4.0), 1500.0) - 80.0
 		var ghost_y := 150.0 + i * 32.0 + sin(background_time * 1.2 + i * 1.7) * 24.0
 		_draw_cute_ghost(Vector2(ghost_x, ghost_y), [Color("#b8f4ff"), Color("#e8c8ff"), Color("#ffd0e5")][i % 3], 0.62)
+	# A candy-coloured stream of confetti and tiny dancing skeletons gives the
+	# background the manic cartoon energy of a parade, while staying friendly.
+	for i in range(7):
+		var confetti_x := fmod(80.0 + i * 205.0 - camera_x * 0.28, 1500.0) - 110.0
+		var confetti_y := 110.0 + fmod(background_time * (24.0 + i * 2.0) + i * 73.0, 310.0)
+		var confetti_color: Color = [Color("#7cf5ff"), Color("#ff9dbc"), Color("#f5e27e"), Color("#b06cff")][i % 4]
+		draw_line(Vector2(confetti_x, confetti_y), Vector2(confetti_x + 9.0, confetti_y + 12.0), Color(confetti_color, 0.65), 4.0)
+	for i in range(4):
+		var parade_x := fmod(180.0 + i * 340.0 - camera_x * 0.22, 1500.0) - 80.0
+		var parade_y := 425.0 + sin(background_time * 2.0 + i) * 9.0
+		_draw_tiny_skeleton(Vector2(parade_x, parade_y), i)
 
 	# Beat sparkles pop around the mascot like a cartoon celebration.
 	for i in range(8):
@@ -434,6 +445,16 @@ func _draw_cute_ghost(pos: Vector2, tint: Color, alpha: float) -> void:
 	draw_circle(pos + Vector2(9, -15), 5.0, Color("#34245e"))
 	draw_circle(pos + Vector2(0, 0), 4.0, Color("#ff9dbc"))
 
+func _draw_tiny_skeleton(pos: Vector2, variant: int) -> void:
+	var tint: Color = [Color("#fff5dd"), Color("#ffd8ed"), Color("#d7f8ff")][variant % 3]
+	draw_circle(pos + Vector2(0, -20), 14.0, Color(tint, 0.72))
+	draw_circle(pos + Vector2(-5, -22), 3.0, Color("#34245e"))
+	draw_circle(pos + Vector2(5, -22), 3.0, Color("#34245e"))
+	draw_line(pos + Vector2(0, -6), pos + Vector2(0, 24), Color(tint, 0.72), 6.0)
+	draw_line(pos + Vector2(-17, 3), pos + Vector2(17, 3), Color(tint, 0.72), 5.0)
+	draw_line(pos + Vector2(0, 23), pos + Vector2(-12, 39), Color(tint, 0.72), 5.0)
+	draw_line(pos + Vector2(0, 23), pos + Vector2(12, 39), Color(tint, 0.72), 5.0)
+
 func _draw_sparkle(pos: Vector2, size: float, color: Color) -> void:
 	draw_colored_polygon(PackedVector2Array([pos + Vector2(0, -size), pos + Vector2(size * 0.35, -size * 0.35), pos + Vector2(size, 0), pos + Vector2(size * 0.35, size * 0.35), pos + Vector2(0, size), pos + Vector2(-size * 0.35, size * 0.35), pos + Vector2(-size, 0), pos + Vector2(-size * 0.35, -size * 0.35)]), color)
 
@@ -449,19 +470,32 @@ func _draw_world() -> void:
 func _draw_object(object: Dictionary) -> void:
 	var kind: String = object["type"]; var rect := _object_rect(object); rect.position.x -= camera_x; var center := rect.get_center()
 	match kind:
-		"spike": draw_colored_polygon(PackedVector2Array([Vector2(rect.position.x, FLOOR_Y), Vector2(center.x, rect.position.y), Vector2(rect.end.x, FLOOR_Y)]), Color("#ff638c"))
-		"block": draw_rect(rect, Color("#b06cff"))
+		"spike":
+			draw_colored_polygon(PackedVector2Array([Vector2(rect.position.x, FLOOR_Y), Vector2(center.x, rect.position.y), Vector2(rect.end.x, FLOOR_Y)]), Color("#ff638c"))
+			draw_line(Vector2(center.x - 7, rect.position.y + 18), Vector2(center.x + 7, rect.position.y + 30), Color("#fff0f7"), 4.0)
+			draw_string(ThemeDB.fallback_font, Vector2(center.x - 28, rect.position.y - 10), "DANGER", HORIZONTAL_ALIGNMENT_CENTER, 56, 10, Color("#ffb6c9"))
+		"block":
+			draw_rect(rect, Color("#b06cff")); draw_rect(rect.grow(-7.0), Color("#422a81"), false, 4.0)
+			draw_string(ThemeDB.fallback_font, Vector2(rect.position.x, rect.position.y + rect.size.y * 0.58), "WALL", HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 13, Color("#f4d9ff"))
 		"laser_gate":
 			var laser_period: float = float(object["properties"].get("period", 4.0)); var laser_on: float = float(object["properties"].get("on_beats", 2.0)); var active := fmod(run_time, laser_period * _music_beat()) < laser_on * _music_beat()
+			draw_circle(Vector2(center.x, rect.position.y), 18.0, Color("#ff8caa") if active else Color("#7cf5ff")); draw_circle(Vector2(center.x, rect.end.y), 18.0, Color("#ff8caa") if active else Color("#7cf5ff"))
 			draw_line(Vector2(center.x, rect.position.y), Vector2(center.x, rect.end.y), Color("#ff638c") if active else Color("#7cf5ff"), 8.0)
 			draw_string(ThemeDB.fallback_font, Vector2(center.x - 35, rect.position.y - 10), "ON" if active else "OFF", HORIZONTAL_ALIGNMENT_CENTER, 70, 12, Color("#ffb6c9") if active else Color("#a9f8ff"))
-		"catapult": draw_rect(rect, Color("#f2d35e")); draw_line(rect.position + Vector2(10, 10), rect.end - Vector2(10, 10), Color("#0b102b"), 4.0)
-		"bounce_pad": draw_rect(rect, Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, rect.position + Vector2(8, 21), "↑", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#0b102b"))
-		"moving_platform": draw_rect(rect, Color("#8fa8df"))
-		"gravity_portal": draw_arc(center, 35.0, 0.0, TAU, 24, Color("#ff9ab4"), 7.0)
-		"speed_ring": draw_arc(center, 18.0, 0.0, TAU, 20, Color("#f5e27e"), 6.0)
-		"star": draw_colored_polygon(PackedVector2Array([center + Vector2(0, -18), center + Vector2(9, 0), center + Vector2(0, 18), center + Vector2(-9, 0)]), Color("#f5e27e"))
-		"checkpoint": draw_line(Vector2(center.x, rect.end.y), Vector2(center.x, rect.position.y), Color("#7cf5ff"), 5.0)
+		"catapult":
+			draw_rect(rect, Color("#f2d35e")); draw_line(rect.position + Vector2(10, 10), rect.end - Vector2(10, 10), Color("#0b102b"), 4.0); draw_circle(Vector2(center.x, rect.position.y + 4), 10.0, Color("#ff8caa")); draw_string(ThemeDB.fallback_font, Vector2(rect.position.x - 15, rect.position.y - 12), "FLING", HORIZONTAL_ALIGNMENT_CENTER, 94, 11, Color("#fff0b3"))
+		"bounce_pad":
+			draw_rect(rect, Color("#7cf5ff")); draw_line(Vector2(rect.position.x + 8, rect.end.y - 6), Vector2(center.x, rect.position.y + 5), Color("#0b102b"), 4.0); draw_line(Vector2(rect.end.x - 8, rect.end.y - 6), Vector2(center.x, rect.position.y + 5), Color("#0b102b"), 4.0); draw_string(ThemeDB.fallback_font, Vector2(rect.position.x - 10, rect.position.y - 12), "BOUNCE", HORIZONTAL_ALIGNMENT_CENTER, 84, 11, Color("#cfffff"))
+		"moving_platform":
+			draw_rect(rect, Color("#8fa8df")); draw_line(Vector2(rect.position.x - 18, center.y), Vector2(rect.position.x - 3, center.y), Color("#f5e27e"), 3.0); draw_line(Vector2(rect.end.x + 3, center.y), Vector2(rect.end.x + 18, center.y), Color("#f5e27e"), 3.0); draw_string(ThemeDB.fallback_font, Vector2(rect.position.x, rect.position.y - 10), "MOVE", HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 11, Color("#eef3ff"))
+		"gravity_portal":
+			draw_circle(center, 35.0 + sin(background_time * 4.0) * 3.0, Color(0.65, 0.35, 1.0, 0.18)); draw_arc(center, 35.0, 0.0, TAU, 24, Color("#ff9ab4"), 7.0); draw_string(ThemeDB.fallback_font, Vector2(center.x - 45, center.y + 5), "FLIP", HORIZONTAL_ALIGNMENT_CENTER, 90, 14, Color("#ffe0ec"))
+		"speed_ring":
+			draw_arc(center, 18.0, 0.0, TAU, 20, Color("#f5e27e"), 6.0); draw_arc(center, 29.0, 0.0, TAU, 20, Color("#ffca67"), 3.0); draw_string(ThemeDB.fallback_font, Vector2(center.x - 35, center.y + 48), "SPEED", HORIZONTAL_ALIGNMENT_CENTER, 70, 11, Color("#fff0b3"))
+		"star":
+			draw_colored_polygon(PackedVector2Array([center + Vector2(0, -18), center + Vector2(9, 0), center + Vector2(0, 18), center + Vector2(-9, 0)]), Color("#f5e27e")); draw_circle(center, 5.0, Color("#fff8cf"))
+		"checkpoint":
+			draw_line(Vector2(center.x, rect.end.y), Vector2(center.x, rect.position.y), Color("#7cf5ff"), 5.0); draw_colored_polygon(PackedVector2Array([Vector2(center.x + 2, rect.position.y + 4), Vector2(center.x + 30, rect.position.y + 14), Vector2(center.x + 2, rect.position.y + 25)]), Color("#ff9dbc")); draw_string(ThemeDB.fallback_font, Vector2(center.x - 42, rect.position.y - 10), "SAVE", HORIZONTAL_ALIGNMENT_CENTER, 84, 11, Color("#cfffff"))
 
 func _draw_hud() -> void:
 	draw_rect(Rect2(24, 20, 420, 80), Color(0.04, 0.06, 0.16, 0.84)); draw_string(ThemeDB.fallback_font, Vector2(44, 52), "NEON TWICE", HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, Vector2(44, 80), "SCORE %06d    COMBO x%d" % [score, combo], HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#f5e27e"))

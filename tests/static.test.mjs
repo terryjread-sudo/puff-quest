@@ -24,11 +24,15 @@ assert.match(game, /func _import_level/);
 assert.match(game, /catapult/);
 assert.match(game, /gravity_portal/);
 assert.match(game, /func _draw_builder/);
+assert.match(game, /func _draw_tiny_skeleton/);
+assert.match(game, /"DANGER"/);
+assert.match(game, /"FLIP"/);
 assert.match(data, /static func validate/);
 assert.match(data, /moving_platform/);
 assert.match(data, /quiz/);
 assert.match(shell, /width: 100vw/);
 assert.match(shell, /height: 100dvh/);
+assert.match(shell, /position: fixed/);
 assert.match(read('export_presets.cfg'), /html\/custom_html_shell="res:\/\/web_shell\.html"/);
 assert.doesNotMatch(game, /Puff Quest|Puffo|Meadow/);
 
