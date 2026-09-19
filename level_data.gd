@@ -4,6 +4,8 @@ extends RefCounted
 const VERSION := 1
 const MUSIC_BPM := 120.0
 const MUSIC_OFFSET := 0.0
+const DEFAULT_TRACK := "cyberpunk-menu-music.mp3"
+const MUSIC_TRACKS := ["cyberpunk-menu-music.mp3", "murder-on-the-metrorail.ogg", "boss-fight.ogg", "funky-chiptune.ogg"]
 
 static func default_level() -> Dictionary:
 	var objects: Array = []
@@ -25,7 +27,7 @@ static func default_level() -> Dictionary:
 	objects.append(_object("moving_platform", 58.0, 1, {"travel_beats": 4.0, "distance_lanes": 2.0}, id)); id += 1
 	objects.append(_object("gravity_portal", 88.0, 0, {"duration_beats": 8.0}, id)); id += 1
 	objects.append(_object("speed_ring", 118.0, 1, {"multiplier": 1.25, "duration_beats": 4.0}, id)); id += 1
-	return {"version": VERSION, "music": {"track": "cyberpunk-menu-music.mp3", "bpm": MUSIC_BPM, "beat_offset_seconds": MUSIC_OFFSET}, "length_beats": 184, "objects": objects, "triggers": triggers}
+	return {"version": VERSION, "music": {"track": DEFAULT_TRACK, "bpm": MUSIC_BPM, "beat_offset_seconds": MUSIC_OFFSET}, "length_beats": 184, "objects": objects, "triggers": triggers}
 
 static func _object(kind: String, beat: float, lane: float, properties: Dictionary, number: int) -> Dictionary:
 	return {"id": "%s-%03d" % [kind, number], "type": kind, "beat": beat, "lane": lane, "properties": properties}
@@ -38,7 +40,9 @@ static func validate(raw: Variant) -> Dictionary:
 	result["version"] = int(source.get("version", VERSION))
 	result["length_beats"] = clamp(float(source.get("length_beats", 184.0)), 32.0, 1024.0)
 	var music: Dictionary = source.get("music", {}) if source.get("music", {}) is Dictionary else {}
-	result["music"] = {"track": "cyberpunk-menu-music.mp3", "bpm": clamp(float(music.get("bpm", MUSIC_BPM)), 40.0, 240.0), "beat_offset_seconds": float(music.get("beat_offset_seconds", MUSIC_OFFSET))}
+	var requested_track := str(music.get("track", DEFAULT_TRACK))
+	var selected_track := requested_track if MUSIC_TRACKS.has(requested_track) else DEFAULT_TRACK
+	result["music"] = {"track": selected_track, "bpm": clamp(float(music.get("bpm", MUSIC_BPM)), 40.0, 240.0), "beat_offset_seconds": float(music.get("beat_offset_seconds", MUSIC_OFFSET))}
 	result["objects"] = _clean_objects(source.get("objects", []))
 	result["triggers"] = _clean_triggers(source.get("triggers", []))
 	return result

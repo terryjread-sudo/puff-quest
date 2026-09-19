@@ -11,6 +11,12 @@ const JUMP_VELOCITY := -720.0
 const DASH_SPEED := 920.0
 const DASH_TIME := 0.20
 const PALETTE := ["block", "spike", "catapult", "timetable", "bounce_pad", "moving_platform", "gravity_portal", "speed_ring", "star", "checkpoint"]
+const MUSIC_OPTIONS := [
+	{"name": "CYBERPUNK MENU", "path": "res://assets/cyberpunk-menu-music.mp3", "bpm": 120.0},
+	{"name": "METRORAIL", "path": "res://assets/murder-on-the-metrorail.ogg", "bpm": 120.0},
+	{"name": "BOSS FIGHT", "path": "res://assets/boss-fight.ogg", "bpm": 120.0},
+	{"name": "FUNKY CHiptune", "path": "res://assets/funky-chiptune.ogg", "bpm": 120.0}
+]
 
 var level: Dictionary = {}
 var objects: Array = []
@@ -37,6 +43,7 @@ var quiz_table := 2
 var quiz_choices: Array[int] = []
 var quiz_correct_index := 0
 var quiz_points := 0
+var quiz_streak := 0
 var combo := 0
 var best_combo := 0
 var score := 0
@@ -54,6 +61,12 @@ var gravity_sign := 1.0
 var gravity_until := 0.0
 var catapult_state: Dictionary = {}
 var speed_until := 0.0
+var music_index := 0
+var undo_stack: Array = []
+var redo_stack: Array = []
+var clipboard_object: Dictionary = {}
+var selected_object_index := -1
+var drag_object_index := -1
 
 func _ready() -> void:
 	rng.seed = 20260918
@@ -74,11 +87,25 @@ func _apply_level(data: Dictionary) -> void:
 
 func _setup_music() -> void:
 	music_player = AudioStreamPlayer.new()
-	var stream := load("res://assets/cyberpunk-menu-music.mp3") as AudioStreamMP3
-	if stream != null:
-		stream.loop = true
-		music_player.stream = stream
 	add_child(music_player)
+	_select_music(0, false)
+
+func _select_music(index: int, restart: bool = true) -> void:
+	music_index = posmod(index, MUSIC_OPTIONS.size())
+	var option: Dictionary = MUSIC_OPTIONS[music_index]
+	var stream := load(str(option["path"])) as AudioStream
+	if stream == null: return
+	if stream is AudioStreamMP3: (stream as AudioStreamMP3).loop = true
+	if stream is AudioStreamOggVorbis: (stream as AudioStreamOggVorbis).loop = true
+	music_player.stream = stream
+	level["music"]["track"] = str(option["path"]).get_file()
+	level["music"]["bpm"] = float(option["bpm"])
+	if restart and music_started: music_player.play()
+	message = "MUSIC: %s" % option["name"]
+	message_time = 1.5
+
+func _cycle_music() -> void:
+	_select_music(music_index + 1, true)
 
 func _ensure_music() -> void:
 	if music_started or music_player.stream == null: return
@@ -143,10 +170,18 @@ func _input(event: InputEvent) -> void:
 		if music_player != null: music_player.stream_paused = paused or build_mode
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_M and not started: _cycle_music(); return
 		if event.keycode == KEY_B and started and not quiz_active: _toggle_builder(); return
-		if build_mode: _builder_key(event.keycode); return
+		if build_mode:
+			if event.ctrl_pressed and event.keycode == KEY_Z: _undo_edit(); return
+			if event.ctrl_pressed and event.keycode == KEY_Y: _redo_edit(); return
+			if event.ctrl_pressed and event.keycode == KEY_C: _copy_selected(); return
+			if event.ctrl_pressed and event.keycode == KEY_V: _paste_selected(); return
+			_builder_key(event.keycode); return
 	if build_mode:
+		if event is InputEventMouseMotion and drag_object_index >= 0: _builder_drag(event.position)
 		if event is InputEventMouseButton and event.pressed: _builder_click(event.position, event.button_index)
+		if event is InputEventMouseButton and not event.pressed and event.button_index == MOUSE_BUTTON_LEFT: _builder_drop()
 		return
 	if event.is_action_pressed("jump"):
 		if finished: _restart_run()
@@ -158,7 +193,9 @@ func _input(event: InputEvent) -> void:
 		elif not quiz_active: _start_dash()
 	if event is InputEventKey and event.pressed and not event.echo and quiz_active and event.keycode >= KEY_1 and event.keycode <= KEY_3: _answer_quiz(event.keycode - KEY_1)
 	if event is InputEventMouseButton and event.pressed:
-		if not started: _start_run()
+		if not started:
+			if _music_button_rect().has_point(event.position): _cycle_music()
+			else: _start_run()
 		elif quiz_active:
 			var choice := _quiz_choice_at(event.position)
 			if choice >= 0: _answer_quiz(choice)
@@ -166,7 +203,9 @@ func _input(event: InputEvent) -> void:
 			if event.position.x < VIEW.x * 0.55: jump_buffer = 0.12
 			else: _start_dash()
 	if event is InputEventScreenTouch and event.pressed:
-		if not started: _start_run()
+		if not started:
+			if _music_button_rect().has_point(event.position): _cycle_music()
+			else: _start_run()
 		elif quiz_active:
 			var touch_choice := _quiz_choice_at(event.position)
 			if touch_choice >= 0: _answer_quiz(touch_choice)
@@ -178,10 +217,11 @@ func _start_run() -> void:
 	started = true; paused = false; _ensure_music(); message = "FIND THE BEAT"; message_time = 1.5
 
 func _restart_run() -> void:
-	_apply_level(level); player = Vector2(START_X, FLOOR_Y - PLAYER_SIZE.y); velocity = Vector2.ZERO; camera_x = 0.0; run_time = 0.0; checkpoint_index = 0; combo = 0; score = 0; quiz_points = 0; finished = false; quiz_active = false; build_mode = false; paused = false; speed_until = 0.0; if music_player != null: music_player.stream_paused = false; _start_run()
+	_apply_level(level); player = Vector2(START_X, FLOOR_Y - PLAYER_SIZE.y); velocity = Vector2.ZERO; camera_x = 0.0; run_time = 0.0; checkpoint_index = 0; combo = 0; score = 0; quiz_points = 0; quiz_streak = 0; finished = false; quiz_active = false; build_mode = false; paused = false; speed_until = 0.0; if music_player != null: music_player.stream_paused = false; _start_run()
 
 func _toggle_builder() -> void:
 	build_mode = not build_mode; paused = build_mode
+	if build_mode: _reset_edit_history()
 	if music_player != null: music_player.stream_paused = build_mode
 	message = "BUILDER ON" if build_mode else "RUN RESUMED"; message_time = 1.0
 
@@ -199,6 +239,74 @@ func _builder_key(key: Key) -> void:
 	if key >= KEY_1 and key <= KEY_9: selected_palette = clamp(key - KEY_1, 0, PALETTE.size() - 1)
 	if key == KEY_0: selected_palette = 9
 
+func _music_button_rect() -> Rect2:
+	return Rect2(430, 470, 420, 58)
+
+func _reset_edit_history() -> void:
+	undo_stack = [level.duplicate(true)]
+	redo_stack.clear()
+	selected_object_index = -1
+	drag_object_index = -1
+
+func _record_edit() -> void:
+	if undo_stack.is_empty() or undo_stack.back() != level:
+		undo_stack.append(level.duplicate(true))
+		if undo_stack.size() > 80: undo_stack.pop_front()
+	redo_stack.clear()
+
+func _restore_edit(snapshot: Dictionary) -> void:
+	level = snapshot.duplicate(true)
+	objects = level["objects"]
+	triggers = level["triggers"]
+	_apply_level(level)
+
+func _undo_edit() -> void:
+	if undo_stack.size() <= 1: return
+	redo_stack.append(undo_stack.pop_back())
+	_restore_edit(undo_stack.back())
+	message = "UNDO"; message_time = 0.8
+
+func _redo_edit() -> void:
+	if redo_stack.is_empty(): return
+	var snapshot: Dictionary = redo_stack.pop_back()
+	undo_stack.append(snapshot)
+	_restore_edit(snapshot)
+	message = "REDO"; message_time = 0.8
+
+func _object_index_at(pos: Vector2) -> int:
+	var world_pos := Vector2(pos.x + camera_x, pos.y)
+	for i in range(objects.size() - 1, -1, -1):
+		if _object_rect(objects[i]).grow(12.0).has_point(world_pos): return i
+	return -1
+
+func _copy_selected() -> void:
+	if selected_object_index < 0 or selected_object_index >= objects.size(): return
+	clipboard_object = objects[selected_object_index].duplicate(true)
+	message = "OBJECT COPIED"; message_time = 0.9
+
+func _paste_selected() -> void:
+	if clipboard_object.is_empty(): return
+	var pasted: Dictionary = clipboard_object.duplicate(true)
+	pasted["id"] = "custom-%03d" % objects.size()
+	pasted["beat"] = float(pasted["beat"]) + 1.0
+	objects.append(pasted)
+	selected_object_index = objects.size() - 1
+	_sync_level(); _record_edit(); message = "OBJECT PASTED"; message_time = 0.9
+
+func _builder_drag(pos: Vector2) -> void:
+	if drag_object_index < 0 or drag_object_index >= objects.size(): return
+	var beat: float = max(0.0, round((camera_x + pos.x - START_X) / _beat_width() * 4.0) / 4.0)
+	var lane: float = clamp(round((FLOOR_Y - pos.y) / LANE_HEIGHT * 2.0) / 2.0, -1.0, 3.0)
+	objects[drag_object_index]["beat"] = beat
+	objects[drag_object_index]["lane"] = lane
+	_sync_level()
+
+func _builder_drop() -> void:
+	if drag_object_index >= 0:
+		_record_edit()
+		message = "OBJECT MOVED"; message_time = 0.9
+	drag_object_index = -1
+
 func _builder_click(pos: Vector2, button: MouseButton) -> void:
 	if pos.x < 300.0 and pos.y > 130.0 and pos.y < 620.0:
 		var index := int((pos.y - 130.0) / 42.0)
@@ -210,11 +318,18 @@ func _builder_click(pos: Vector2, button: MouseButton) -> void:
 		return
 	var beat: float = max(0.0, round((camera_x + pos.x - START_X) / _beat_width() * 4.0) / 4.0)
 	var lane: float = clamp(round((FLOOR_Y - pos.y) / LANE_HEIGHT * 2.0) / 2.0, -1.0, 3.0)
-	if button == MOUSE_BUTTON_RIGHT: _remove_nearest(beat, lane); return
+	if button == MOUSE_BUTTON_RIGHT: _remove_nearest(beat, lane); _record_edit(); return
+	if button == MOUSE_BUTTON_MIDDLE:
+		selected_object_index = _object_index_at(pos); _copy_selected(); return
+	if button == MOUSE_BUTTON_LEFT:
+		selected_object_index = _object_index_at(pos)
+		if selected_object_index >= 0:
+			drag_object_index = selected_object_index
+			return
 	var kind: String = PALETTE[selected_palette]
 	if kind == "timetable": triggers.append({"id": "quiz-custom-%03d" % triggers.size(), "type": "quiz", "beat": beat, "table": 2, "time_limit": 10.0})
 	else: objects.append({"id": "custom-%03d" % objects.size(), "type": kind, "beat": beat, "lane": lane, "properties": _default_properties(kind)})
-	_sync_level()
+	_sync_level(); _record_edit()
 
 func _default_properties(kind: String) -> Dictionary:
 	match kind:
@@ -293,8 +408,12 @@ func _start_quiz(trigger: Dictionary) -> void:
 func _answer_quiz(choice: int) -> void:
 	if not quiz_active: return
 	quiz_active = false
-	if choice == quiz_correct_index: quiz_points += 1; score += 250; _combo_event("SOLVED"); message = "CORRECT +250"
-	else: combo = 0; message = "WRONG - COMBO LOST"
+	if choice == quiz_correct_index:
+		quiz_points += 1; quiz_streak += 1
+		var reward: int = 250 + max(0, quiz_streak - 1) * 100
+		score += reward; _combo_event("SOLVED"); message = "CORRECT +%d • QUIZ STREAK x%d" % [reward, quiz_streak]
+	else:
+		combo = 0; quiz_streak = 0; message = "WRONG - QUIZ STREAK LOST"
 	message_time = 1.5; flash = 0.25
 
 func _start_dash() -> void:
@@ -302,7 +421,7 @@ func _start_dash() -> void:
 	dash_left = DASH_TIME; dash_cooldown = _music_beat() * 2.0; velocity = Vector2(DASH_SPEED, 0.0); _combo_event("DASH")
 
 func _crash(reason: String) -> void:
-	combo = 0; flash = 0.35; message = "%s • RESPAWN CHECKPOINT %d" % [reason, checkpoint_index]; message_time = 1.4; player = Vector2(START_X + checkpoint_beats[checkpoint_index] * _beat_width(), FLOOR_Y - PLAYER_SIZE.y); velocity = Vector2.ZERO; dash_left = 0.0; dash_cooldown = 0.0; gravity_sign = 1.0; gravity_until = 0.0; speed_until = 0.0; quiz_active = false; consumed.clear(); triggered.clear(); catapult_state.clear()
+	combo = 0; quiz_streak = 0; flash = 0.35; message = "%s • RESPAWN CHECKPOINT %d" % [reason, checkpoint_index]; message_time = 1.4; player = Vector2(START_X + checkpoint_beats[checkpoint_index] * _beat_width(), FLOOR_Y - PLAYER_SIZE.y); velocity = Vector2.ZERO; dash_left = 0.0; dash_cooldown = 0.0; gravity_sign = 1.0; gravity_until = 0.0; speed_until = 0.0; quiz_active = false; consumed.clear(); triggered.clear(); catapult_state.clear()
 	for trigger in triggers:
 		if float(trigger["beat"]) < checkpoint_beats[checkpoint_index]: triggered[trigger["id"]] = true
 
@@ -371,7 +490,20 @@ func _draw_background() -> void:
 	for x in range(-100, int(fill_size.x) + 1500, 100):
 		var sx := fmod(x - camera_x * 0.15, 1500.0); draw_line(Vector2(sx, 0), Vector2(sx - 260, VIEW.y), Color(0.7, 0.45, 0.95, 0.11), 1.0)
 	for y in range(80, int(fill_size.y) + 80, 80): draw_line(Vector2(0, y), Vector2(fill_size.x, y), Color(0.7, 0.45, 0.95, 0.10), 1.0)
+	_draw_beat_layers(fill_size, pulse)
 	_draw_kawaii_bone_carnival(pulse)
+
+func _draw_beat_layers(fill_size: Vector2, pulse: float) -> void:
+	# Parallax ribbons and halo rings swell on every beat behind the characters.
+	var beat_bloom := pow(max(0.0, sin(background_time * TAU / _music_beat())), 12.0)
+	for layer in range(4):
+		var y := 135.0 + layer * 92.0 + sin(background_time * (0.7 + layer * 0.2)) * 10.0
+		var drift := fmod(background_time * (24.0 + layer * 12.0) - camera_x * (0.08 + layer * 0.03), 1540.0)
+		draw_line(Vector2(-180.0 + drift, y), Vector2(240.0 + drift, y - 22.0), Color(0.45, 0.88, 1.0, 0.07 + pulse * 0.05), 10.0 + beat_bloom * 8.0)
+	for i in range(5):
+		var halo_x := fmod(140.0 + i * 290.0 - camera_x * 0.14, 1540.0) - 120.0
+		var halo_y := 220.0 + (i % 3) * 105.0
+		draw_arc(Vector2(halo_x, halo_y), 30.0 + beat_bloom * 18.0, 0.0, TAU, 24, Color(0.95, 0.55, 0.88, 0.08 + pulse * 0.05), 4.0)
 
 func _draw_kawaii_bone_carnival(pulse: float) -> void:
 	# Original pastel spooky-cute background set piece: all shapes are drawn in code.
@@ -494,11 +626,12 @@ func _draw_object(object: Dictionary) -> void:
 func _draw_hud() -> void:
 	draw_rect(Rect2(24, 20, 420, 80), Color(0.04, 0.06, 0.16, 0.84)); draw_string(ThemeDB.fallback_font, Vector2(44, 52), "NEON TWICE", HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, Vector2(44, 80), "SCORE %06d    COMBO x%d" % [score, combo], HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#f5e27e"))
 	draw_string(ThemeDB.fallback_font, Vector2(VIEW.x - 300, 46), "%d BPM  •  %s" % [int(level["music"]["bpm"]), "BUILDER" if build_mode else ("SLOWED" if quiz_active else "ON BEAT")], HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color("#cbbaff")); draw_string(ThemeDB.fallback_font, Vector2(VIEW.x - 300, 76), "DISTANCE %04d m" % int(player.x / 10.0), HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#8fa8df"))
+	if quiz_streak > 0: draw_string(ThemeDB.fallback_font, Vector2(470, 52), "QUIZ STREAK x%d" % quiz_streak, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#a8ffd0"))
 	if message_time > 0.0: draw_string(ThemeDB.fallback_font, Vector2(VIEW.x / 2 - 200, 145), message, HORIZONTAL_ALIGNMENT_CENTER, 400, 22, Color("#ffffff"))
 	if started and not quiz_active and not build_mode and not finished: draw_string(ThemeDB.fallback_font, Vector2(34, VIEW.y - 30), "SPACE / TAP JUMP     X / TAP DASH     B BUILD", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.8, 0.9, 1.0, 0.7))
 
 func _draw_title() -> void:
-	draw_rect(Rect2(Vector2.ZERO, VIEW), Color(0.02, 0.03, 0.10, 0.78)); draw_string(ThemeDB.fallback_font, Vector2(0, 245), "NEON TWICE", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 64, Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, Vector2(0, 300), "JUMP. DASH. BUILD. SOLVE THE BEAT.", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 22, Color("#f5e27e")); draw_string(ThemeDB.fallback_font, Vector2(0, 370), "PRESS SPACE / A BUTTON / TAP TO START", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 20, Color("#ffffff")); draw_string(ThemeDB.fallback_font, Vector2(0, 430), "B opens the beat builder • E exports • I imports", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 16, Color("#a9b8ef"))
+	draw_rect(Rect2(Vector2.ZERO, VIEW), Color(0.02, 0.03, 0.10, 0.78)); draw_string(ThemeDB.fallback_font, Vector2(0, 245), "NEON TWICE", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 64, Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, Vector2(0, 300), "JUMP. DASH. BUILD. SOLVE THE BEAT.", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 22, Color("#f5e27e")); draw_string(ThemeDB.fallback_font, Vector2(0, 370), "PRESS SPACE / A BUTTON / TAP TO START", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 20, Color("#ffffff")); draw_string(ThemeDB.fallback_font, Vector2(0, 430), "B opens the beat builder • E exports • I imports", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 16, Color("#a9b8ef")); draw_rect(_music_button_rect(), Color("#26336e")); draw_rect(_music_button_rect(), Color("#55d68a"), false, 3.0); draw_string(ThemeDB.fallback_font, Vector2(0, 507), "M / TAP MUSIC: %s" % MUSIC_OPTIONS[music_index]["name"], HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 17, Color("#a8ffd0"))
 
 func _draw_quiz() -> void:
 	draw_rect(Rect2(Vector2.ZERO, VIEW), Color(0.03, 0.02, 0.12, 0.72)); draw_rect(Rect2(90, 24, 1100, 270), Color("#11183e")); draw_rect(Rect2(90, 24, 1100, 270), Color("#7cf5ff"), false, 4.0); draw_string(ThemeDB.fallback_font, Vector2(0, 82), "TIMETABLE QUIZ", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 22, Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, Vector2(0, 190), "%d × %d = ?" % [quiz_table, quiz_number], HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 64, Color("#ffffff")); draw_string(ThemeDB.fallback_font, Vector2(0, 246), "Solve the beat before the timer runs out", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 17, Color("#a9b8ef"))
@@ -507,7 +640,7 @@ func _draw_quiz() -> void:
 	draw_string(ThemeDB.fallback_font, Vector2(0, 620), "TIME LEFT %.1f" % max(0.0, quiz_time), HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 22, Color("#ff9ab4"))
 
 func _draw_builder() -> void:
-	draw_rect(Rect2(0, 0, 300, VIEW.y), Color("#0c1230")); draw_rect(Rect2(0, 0, 300, 112), Color("#182450")); draw_string(ThemeDB.fallback_font, Vector2(24, 38), "BEAT BUILDER", HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, Vector2(24, 72), "Click place • right-click delete", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#a9b8ef")); draw_string(ThemeDB.fallback_font, Vector2(24, 98), "E export • I import • Enter test", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#a9b8ef"))
+	draw_rect(Rect2(0, 0, 300, VIEW.y), Color("#0c1230")); draw_rect(Rect2(0, 0, 300, 112), Color("#182450")); draw_string(ThemeDB.fallback_font, Vector2(24, 38), "BEAT BUILDER", HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, Vector2(24, 72), "Click place • drag move", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#a9b8ef")); draw_string(ThemeDB.fallback_font, Vector2(24, 98), "E/I • Ctrl-Z/Y • Ctrl-C/V", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#a9b8ef"))
 	for i in range(PALETTE.size()):
 		var y := 130.0 + i * 42.0; var selected := i == selected_palette; draw_rect(Rect2(16, y - 28, 268, 36), Color("#26336e") if selected else Color("#11183e")); draw_string(ThemeDB.fallback_font, Vector2(30, y - 4), "%d  %s" % [(i + 1) % 10, PALETTE[i].replace("_", " ").to_upper()], HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#f5e27e") if selected else Color("#d6defc"))
 	draw_string(ThemeDB.fallback_font, Vector2(330, 92), "Beat grid: click to place • Enter tests from start", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#ffffff"))
