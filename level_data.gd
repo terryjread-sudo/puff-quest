@@ -21,7 +21,7 @@ static func default_level() -> Dictionary:
 	for beat in [31.0, 67.0, 105.0]:
 		objects.append(_object("checkpoint", beat, 0, {}, id)); id += 1
 	for beat in [22.0, 48.0, 76.0]:
-		triggers.append({"id": "quiz-%03d" % beat, "type": "quiz", "beat": beat, "table": 2, "time_limit": 3.2})
+		triggers.append({"id": "quiz-%03d" % beat, "type": "quiz", "beat": beat, "table": 2, "time_limit": 10.0})
 	objects.append(_object("catapult", 14.0, 0, {"delay_beats": 1.0, "launch_beats": 2.0}, id)); id += 1
 	objects.append(_object("bounce_pad", 39.0, 0, {"strength": 1.0}, id)); id += 1
 	objects.append(_object("moving_platform", 58.0, 1, {"travel_beats": 4.0, "distance_lanes": 2.0}, id)); id += 1

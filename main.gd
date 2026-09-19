@@ -212,7 +212,7 @@ func _builder_click(pos: Vector2, button: MouseButton) -> void:
 	var lane: float = clamp(round((FLOOR_Y - pos.y) / LANE_HEIGHT * 2.0) / 2.0, -1.0, 3.0)
 	if button == MOUSE_BUTTON_RIGHT: _remove_nearest(beat, lane); return
 	var kind: String = PALETTE[selected_palette]
-	if kind == "timetable": triggers.append({"id": "quiz-custom-%03d" % triggers.size(), "type": "quiz", "beat": beat, "table": 2, "time_limit": 3.2})
+	if kind == "timetable": triggers.append({"id": "quiz-custom-%03d" % triggers.size(), "type": "quiz", "beat": beat, "table": 2, "time_limit": 10.0})
 	else: objects.append({"id": "custom-%03d" % objects.size(), "type": kind, "beat": beat, "lane": lane, "properties": _default_properties(kind)})
 	_sync_level()
 
@@ -291,7 +291,7 @@ func _check_triggers() -> void:
 		if player.x >= START_X + float(trigger["beat"]) * _beat_width(): triggered[trigger["id"]] = true; _start_quiz(trigger); return
 
 func _start_quiz(trigger: Dictionary) -> void:
-	quiz_active = true; quiz_time = float(trigger.get("time_limit", 3.2)); quiz_table = int(trigger.get("table", 2)); quiz_number = rng.randi_range(1, 12)
+	quiz_active = true; quiz_time = 10.0; quiz_table = int(trigger.get("table", 2)); quiz_number = rng.randi_range(1, 12)
 	var correct: int = quiz_number * quiz_table; quiz_choices = [correct, correct + rng.randi_range(1, 3), max(2, correct - rng.randi_range(1, 3))]; quiz_choices.shuffle(); quiz_correct_index = quiz_choices.find(correct); message = "TIME SHIFT"; message_time = 1.0
 
 func _answer_quiz(choice: int) -> void:
@@ -348,7 +348,7 @@ func _object_rect(object: Dictionary) -> Rect2:
 
 func _quiz_choice_at(pos: Vector2) -> int:
 	for i in range(3):
-		if Rect2(210 + i * 290, 440, 250, 100).has_point(pos): return i
+		if Rect2(140 + i * 350, 360, 300, 190).has_point(pos): return i
 	return -1
 
 func _update_particles(delta: float) -> void:
@@ -513,10 +513,10 @@ func _draw_title() -> void:
 	draw_rect(Rect2(Vector2.ZERO, VIEW), Color(0.02, 0.03, 0.10, 0.78)); draw_string(ThemeDB.fallback_font, Vector2(0, 245), "NEON TWICE", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 64, Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, Vector2(0, 300), "JUMP. DASH. BUILD. SOLVE THE BEAT.", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 22, Color("#f5e27e")); draw_string(ThemeDB.fallback_font, Vector2(0, 370), "PRESS SPACE / A BUTTON / TAP TO START", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 20, Color("#ffffff")); draw_string(ThemeDB.fallback_font, Vector2(0, 430), "B opens the beat builder • E exports • I imports", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 16, Color("#a9b8ef"))
 
 func _draw_quiz() -> void:
-	draw_rect(Rect2(Vector2.ZERO, VIEW), Color(0.03, 0.02, 0.12, 0.60)); draw_rect(Rect2(140, 155, 1000, 390), Color("#11183e")); draw_rect(Rect2(140, 155, 1000, 390), Color("#7cf5ff"), false, 4.0); draw_string(ThemeDB.fallback_font, Vector2(0, 205), "TIMETABLE QUIZ", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 22, Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, Vector2(0, 285), "%d × %d = ?" % [quiz_table, quiz_number], HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 58, Color("#ffffff")); draw_string(ThemeDB.fallback_font, Vector2(0, 335), "Choose fast to keep your combo alive", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 17, Color("#a9b8ef"))
+	draw_rect(Rect2(Vector2.ZERO, VIEW), Color(0.03, 0.02, 0.12, 0.72)); draw_rect(Rect2(90, 24, 1100, 270), Color("#11183e")); draw_rect(Rect2(90, 24, 1100, 270), Color("#7cf5ff"), false, 4.0); draw_string(ThemeDB.fallback_font, Vector2(0, 82), "TIMETABLE QUIZ", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 22, Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, Vector2(0, 190), "%d × %d = ?" % [quiz_table, quiz_number], HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 64, Color("#ffffff")); draw_string(ThemeDB.fallback_font, Vector2(0, 246), "Solve the beat before the timer runs out", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 17, Color("#a9b8ef"))
 	for i in range(3):
-		var rect := Rect2(210.0 + i * 290.0, 440.0, 250.0, 100.0); draw_rect(rect, Color("#26336e")); draw_rect(rect, Color("#b06cff"), false, 3.0); draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, 64), "%d   %d" % [i + 1, quiz_choices[i]], HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 28, Color("#f5e27e"))
-	draw_string(ThemeDB.fallback_font, Vector2(0, 590), "TIME %.1f" % max(0.0, quiz_time), HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 18, Color("#ff9ab4"))
+		var rect := Rect2(140.0 + i * 350.0, 360.0, 300.0, 190.0); draw_rect(rect, Color("#26336e")); draw_rect(rect, Color("#b06cff"), false, 5.0); draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, 125), "%d" % quiz_choices[i], HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 58, Color("#f5e27e"))
+	draw_string(ThemeDB.fallback_font, Vector2(0, 620), "TIME LEFT %.1f" % max(0.0, quiz_time), HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 22, Color("#ff9ab4"))
 
 func _draw_builder() -> void:
 	draw_rect(Rect2(0, 0, 300, VIEW.y), Color("#0c1230")); draw_rect(Rect2(0, 0, 300, 112), Color("#182450")); draw_string(ThemeDB.fallback_font, Vector2(24, 38), "BEAT BUILDER", HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, Vector2(24, 72), "Click place • right-click delete", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#a9b8ef")); draw_string(ThemeDB.fallback_font, Vector2(24, 98), "E export • I import • Enter test", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#a9b8ef"))

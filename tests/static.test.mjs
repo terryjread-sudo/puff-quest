@@ -16,6 +16,8 @@ assert.match(game, /MUSIC_BPM|\["music"\]\["bpm"\]/);
 assert.match(game, /func _start_quiz/);
 assert.match(game, /func _answer_quiz/);
 assert.match(game, /quiz_choices/);
+assert.match(game, /quiz_time = 10\.0/);
+assert.match(game, /%d" % quiz_choices\[i\]/);
 assert.match(game, /InputEventScreenTouch/);
 assert.match(game, /circuit-punk-game-menu\.mp3/);
 assert.match(game, /func _toggle_builder/);
