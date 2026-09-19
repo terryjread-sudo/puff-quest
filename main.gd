@@ -708,8 +708,8 @@ func _draw_landing_trace() -> void:
 	draw_arc(landing_screen, 18.0 + sin(background_time * 8.0) * 3.0, 0.0, TAU, 20, Color("#a8ffd0"), 3.0)
 
 func _draw_checkpoint_marker() -> void:
-	var marker_x := START_X + checkpoint_beats[checkpoint_index] * _beat_width() - camera_x
-	var glow := 0.16 + min(0.46, checkpoint_flash * 0.35)
+	var marker_x: float = START_X + float(checkpoint_beats[checkpoint_index]) * _beat_width() - camera_x
+	var glow: float = 0.16 + min(0.46, checkpoint_flash * 0.35)
 	draw_line(Vector2(marker_x, FLOOR_Y - 116), Vector2(marker_x, FLOOR_Y + 4), Color(0.66, 1.0, 0.83, glow), 5.0)
 	draw_circle(Vector2(marker_x, FLOOR_Y - 116), 15.0 + checkpoint_flash * 5.0, Color(0.66, 1.0, 0.83, glow * 0.55))
 	draw_arc(Vector2(marker_x, FLOOR_Y - 116), 24.0 + checkpoint_flash * 7.0, 0.0, TAU, 24, Color(0.66, 1.0, 0.83, glow), 3.0)
