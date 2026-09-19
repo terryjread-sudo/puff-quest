@@ -33,6 +33,8 @@ assert.match(data, /quiz/);
 assert.match(shell, /width: 100vw/);
 assert.match(shell, /height: 100dvh/);
 assert.match(shell, /position: fixed/);
+assert.match(shell, /orientationchange/);
+assert.match(shell, /window\.location\.reload/);
 assert.match(read('export_presets.cfg'), /html\/custom_html_shell="res:\/\/web_shell\.html"/);
 assert.doesNotMatch(game, /Puff Quest|Puffo|Meadow/);
 

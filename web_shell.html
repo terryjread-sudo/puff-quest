@@ -15,8 +15,27 @@
   <canvas id="canvas" tabindex="0">Your browser does not support the HTML canvas element.</canvas>
   <script src="$GODOT_URL"></script>
   <script>
+    const canvas = document.getElementById('canvas');
     const engine = new Engine($GODOT_CONFIG);
-    engine.startGame({ canvas: document.getElementById('canvas'), canvasResizePolicy: 2 });
+    let wasLandscape = window.innerWidth >= window.innerHeight;
+    let orientationReload = null;
+
+    function redrawViewport() {
+      canvas.style.width = `${window.innerWidth}px`;
+      canvas.style.height = `${window.innerHeight}px`;
+      const isLandscape = window.innerWidth >= window.innerHeight;
+      if (isLandscape !== wasLandscape) {
+        wasLandscape = isLandscape;
+        window.clearTimeout(orientationReload);
+        orientationReload = window.setTimeout(() => window.location.reload(), 180);
+      }
+    }
+
+    window.addEventListener('resize', redrawViewport, { passive: true });
+    window.addEventListener('orientationchange', redrawViewport, { passive: true });
+    if (screen.orientation) screen.orientation.addEventListener('change', redrawViewport, { passive: true });
+    redrawViewport();
+    engine.startGame({ canvas, canvasResizePolicy: 2 });
   </script>
 </body>
 </html>
