@@ -67,6 +67,10 @@ var redo_stack: Array = []
 var clipboard_object: Dictionary = {}
 var selected_object_index := -1
 var drag_object_index := -1
+var pan_dragging := false
+var pan_last_x := 0.0
+var pan_moved := false
+var pending_place_pos := Vector2.ZERO
 
 func _ready() -> void:
 	rng.seed = 20260918
@@ -179,9 +183,14 @@ func _input(event: InputEvent) -> void:
 			if event.ctrl_pressed and event.keycode == KEY_V: _paste_selected(); return
 			_builder_key(event.keycode); return
 	if build_mode:
-		if event is InputEventMouseMotion and drag_object_index >= 0: _builder_drag(event.position)
+		if event is InputEventMouseMotion:
+			if drag_object_index >= 0: _builder_drag(event.position)
+			elif pan_dragging: _builder_pan(event.position.x)
 		if event is InputEventMouseButton and event.pressed: _builder_click(event.position, event.button_index)
-		if event is InputEventMouseButton and not event.pressed and event.button_index == MOUSE_BUTTON_LEFT: _builder_drop()
+		if event is InputEventMouseButton and not event.pressed and event.button_index == MOUSE_BUTTON_LEFT: _builder_release()
+		if event is InputEventScreenDrag and pan_dragging: _builder_pan(event.position.x)
+		if event is InputEventScreenTouch and event.pressed: _builder_click(event.position, MOUSE_BUTTON_LEFT)
+		if event is InputEventScreenTouch and not event.pressed: _builder_release()
 		return
 	if event.is_action_pressed("jump"):
 		if finished: _restart_run()
@@ -301,11 +310,29 @@ func _builder_drag(pos: Vector2) -> void:
 	objects[drag_object_index]["lane"] = lane
 	_sync_level()
 
-func _builder_drop() -> void:
+func _builder_pan(pos_x: float) -> void:
+	var delta_x: float = pos_x - pan_last_x
+	if abs(delta_x) > 0.5: pan_moved = true
+	var max_camera: float = max(0.0, START_X + float(level["length_beats"]) * _beat_width() - VIEW.x)
+	camera_x = clamp(camera_x - delta_x, 0.0, max_camera)
+	pan_last_x = pos_x
+
+func _builder_release() -> void:
 	if drag_object_index >= 0:
 		_record_edit()
 		message = "OBJECT MOVED"; message_time = 0.9
 	drag_object_index = -1
+	if pan_dragging and not pan_moved: _place_builder_object(pending_place_pos)
+	pan_dragging = false
+	pan_moved = false
+
+func _place_builder_object(pos: Vector2) -> void:
+	var beat: float = max(0.0, round((camera_x + pos.x - START_X) / _beat_width() * 4.0) / 4.0)
+	var lane: float = clamp(round((FLOOR_Y - pos.y) / LANE_HEIGHT * 2.0) / 2.0, -1.0, 3.0)
+	var kind: String = PALETTE[selected_palette]
+	if kind == "timetable": triggers.append({"id": "quiz-custom-%03d" % triggers.size(), "type": "quiz", "beat": beat, "table": 2, "time_limit": 10.0})
+	else: objects.append({"id": "custom-%03d" % objects.size(), "type": kind, "beat": beat, "lane": lane, "properties": _default_properties(kind)})
+	_sync_level(); _record_edit()
 
 func _builder_click(pos: Vector2, button: MouseButton) -> void:
 	if pos.x < 300.0 and pos.y > 130.0 and pos.y < 620.0:
@@ -326,10 +353,7 @@ func _builder_click(pos: Vector2, button: MouseButton) -> void:
 		if selected_object_index >= 0:
 			drag_object_index = selected_object_index
 			return
-	var kind: String = PALETTE[selected_palette]
-	if kind == "timetable": triggers.append({"id": "quiz-custom-%03d" % triggers.size(), "type": "quiz", "beat": beat, "table": 2, "time_limit": 10.0})
-	else: objects.append({"id": "custom-%03d" % objects.size(), "type": kind, "beat": beat, "lane": lane, "properties": _default_properties(kind)})
-	_sync_level(); _record_edit()
+		pan_dragging = true; pan_last_x = pos.x; pan_moved = false; pending_place_pos = pos
 
 func _default_properties(kind: String) -> Dictionary:
 	match kind:
@@ -640,7 +664,7 @@ func _draw_quiz() -> void:
 	draw_string(ThemeDB.fallback_font, Vector2(0, 620), "TIME LEFT %.1f" % max(0.0, quiz_time), HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 22, Color("#ff9ab4"))
 
 func _draw_builder() -> void:
-	draw_rect(Rect2(0, 0, 300, VIEW.y), Color("#0c1230")); draw_rect(Rect2(0, 0, 300, 112), Color("#182450")); draw_string(ThemeDB.fallback_font, Vector2(24, 38), "BEAT BUILDER", HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, Vector2(24, 72), "Click place • drag move", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#a9b8ef")); draw_string(ThemeDB.fallback_font, Vector2(24, 98), "E/I • Ctrl-Z/Y • Ctrl-C/V", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#a9b8ef"))
+	draw_rect(Rect2(0, 0, 300, VIEW.y), Color("#0c1230")); draw_rect(Rect2(0, 0, 300, 112), Color("#182450")); draw_string(ThemeDB.fallback_font, Vector2(24, 38), "BEAT BUILDER", HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, Vector2(24, 72), "Click add • drag empty space to pan", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#a9b8ef")); draw_string(ThemeDB.fallback_font, Vector2(24, 98), "E/I • Ctrl-Z/Y • Ctrl-C/V", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#a9b8ef"))
 	for i in range(PALETTE.size()):
 		var y := 130.0 + i * 42.0; var selected := i == selected_palette; draw_rect(Rect2(16, y - 28, 268, 36), Color("#26336e") if selected else Color("#11183e")); draw_string(ThemeDB.fallback_font, Vector2(30, y - 4), "%d  %s" % [(i + 1) % 10, PALETTE[i].replace("_", " ").to_upper()], HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#f5e27e") if selected else Color("#d6defc"))
 	draw_string(ThemeDB.fallback_font, Vector2(330, 92), "Beat grid: click to place • Enter tests from start", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#ffffff"))

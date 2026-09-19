@@ -28,6 +28,8 @@ assert.match(game, /_undo_edit/);
 assert.match(game, /_redo_edit/);
 assert.match(game, /_paste_selected/);
 assert.match(game, /_builder_drag/);
+assert.match(game, /_builder_pan/);
+assert.match(game, /drag empty space to pan/);
 assert.match(game, /_draw_beat_layers/);
 assert.match(game, /func _toggle_builder/);
 assert.match(game, /func _export_level/);
