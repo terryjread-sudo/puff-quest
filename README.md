@@ -28,7 +28,8 @@ Open this folder in Godot 4.x and run `main.tscn`. The Web export can be configu
 - The run starts with a three-hit shield. Wrong or late answers consume one shield hit; correct answers grant two seconds of invulnerability.
 - Wrong or late answers show the multiplication correction before applying the shield/checkpoint consequence.
 - Jump timing is rated as PERFECT, GOOD, or normal, with bonus score for landing the jump input on the song beat.
-- Level 1 starts with a six-second hazard-free mobile tutorial, then changes tempo and starts a giant kawaii skeleton chase halfway through; the giant slams its knife into the ground every eight beats to bounce the visible world.
+- Every run starts with a six-second hazard-free mobile tutorial; the cube stays at the start line and the level clock restarts cleanly so the first obstacles approach normally afterward.
+- Level 1 then changes tempo and starts a giant kawaii skeleton chase halfway through; the giant slams its knife into the ground every eight beats to bounce the visible world.
 - Level 1 uses a local transparent sprite sheet of the supplied detailed running-skeleton reference, with twelve beat-synchronised poses for the giant leader and slam pose.
 - Catapult launches now accelerate the cube forward over their beat duration instead of teleporting it.
 - Stars award diamonds, correct times-table answers award bonus diamonds, and the title-screen shop persists owned/equipped cube skins in browser local storage.

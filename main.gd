@@ -15,7 +15,7 @@ const LEVEL_COUNT := 3
 const BEAT_FLASH_STRENGTH := 0.055
 const INTRO_CLEAR_SECONDS := 6.0
 const SLAM_INTERVAL_BEATS := 8.0
-const SHOP_BUTTON_RECT := Rect2(1035.0, 28.0, 190.0, 54.0)
+const SHOP_BUTTON_SIZE := Vector2(190.0, 54.0)
 const SKINS := [
 	{"id": "classic", "name": "CLASSIC CYAN", "cost": 0, "body": "#75f1ff", "core": "#f5e27e", "animated": false},
 	{"id": "bubblegum", "name": "BUBBLEGUM PINK", "cost": 25, "body": "#ff9dbc", "core": "#fff1a8", "animated": false},
@@ -222,7 +222,16 @@ func _process(delta: float) -> void:
 
 func _run_step(delta: float) -> void:
 	run_time += delta
+	var in_intro: bool = intro_time_left > 0.0
 	intro_time_left = max(0.0, intro_time_left - delta)
+	if in_intro:
+		# The tutorial is a real level prelude: keep the cube at the start line so
+		# the first obstacles are still approaching when normal play begins.
+		player = Vector2(START_X, FLOOR_Y - PLAYER_SIZE.y)
+		velocity = Vector2.ZERO; jump_buffer = 0.0; dash_left = 0.0; dash_cooldown = 0.0; camera_x = 0.0
+		if intro_time_left <= 0.0:
+			run_time = 0.0; _resume_music(0.0); message = "%s • FIND THE BEAT" % str(level["display_name"]); message_time = 1.0
+		return
 	if slam_next_beat >= 0.0 and player.x >= START_X + slam_next_beat * _beat_width():
 		_trigger_ground_slam()
 		slam_next_beat += SLAM_INTERVAL_BEATS
@@ -289,8 +298,10 @@ func _input(event: InputEvent) -> void:
 		if event is InputEventKey and event.pressed and not event.echo and (event.keycode == KEY_ESCAPE or event.keycode == KEY_S):
 			shop_open = false; message = "SELECT A LEVEL"; message_time = 0.8; return
 		if event is InputEventMouseButton and event.pressed:
+			if _shop_button_rect().has_point(event.position): shop_open = false; return
 			_shop_click(event.position); return
 		if event is InputEventScreenTouch and event.pressed:
+			if _shop_button_rect().has_point(event.position): shop_open = false; return
 			_shop_click(event.position); return
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -330,22 +341,20 @@ func _input(event: InputEvent) -> void:
 		elif not quiz_active: _start_dash()
 	if event is InputEventMouseButton and event.pressed:
 		if not started:
-			if SHOP_BUTTON_RECT.has_point(event.position): shop_open = true; return
+			if _shop_button_rect().has_point(event.position): shop_open = true; return
 			var level_choice: int = _level_choice_at(event.position)
 			if level_choice >= 0: _choose_level(level_choice)
 			else: _start_run()
-		elif event.position.y > VIEW.y * 0.68:
-			if event.position.x < VIEW.x * 0.55: jump_buffer = 0.12
-			else: _start_dash()
+		elif _touch_jump_rect().has_point(event.position): jump_buffer = 0.12
+		elif _touch_dash_rect().has_point(event.position): _start_dash()
 	if event is InputEventScreenTouch and event.pressed:
 		if not started:
-			if SHOP_BUTTON_RECT.has_point(event.position): shop_open = true; return
+			if _shop_button_rect().has_point(event.position): shop_open = true; return
 			var level_touch_choice: int = _level_choice_at(event.position)
 			if level_touch_choice >= 0: _choose_level(level_touch_choice)
 			else: _start_run()
-		elif event.position.y > VIEW.y * 0.62:
-			if event.position.x < VIEW.x * 0.55: jump_buffer = 0.12
-			else: _start_dash()
+		elif _touch_jump_rect().has_point(event.position): jump_buffer = 0.12
+		elif _touch_dash_rect().has_point(event.position): _start_dash()
 
 func _start_run() -> void:
 	if not started:
@@ -416,6 +425,18 @@ func _current_skin() -> Dictionary:
 
 func _shop_card_rect(index: int) -> Rect2:
 	return Rect2(55.0 + (index % 3) * 400.0, 150.0 + int(index / 3) * 230.0, 370.0, 200.0)
+
+func _shop_button_rect() -> Rect2:
+	var screen_size := get_viewport_rect().size
+	return Rect2(max(20.0, screen_size.x - SHOP_BUTTON_SIZE.x - 55.0), 28.0, SHOP_BUTTON_SIZE.x, SHOP_BUTTON_SIZE.y)
+
+func _touch_jump_rect() -> Rect2:
+	var screen_size := get_viewport_rect().size
+	return Rect2(0.0, screen_size.y * 0.62, screen_size.x * 0.55, screen_size.y * 0.38)
+
+func _touch_dash_rect() -> Rect2:
+	var screen_size := get_viewport_rect().size
+	return Rect2(screen_size.x * 0.55, screen_size.y * 0.62, screen_size.x * 0.45, screen_size.y * 0.38)
 
 func _shop_click(pos: Vector2) -> void:
 	for i in range(SKINS.size()):
@@ -984,17 +1005,22 @@ func _is_touch_device() -> bool:
 	return bool(JavaScriptBridge.eval("window.matchMedia && window.matchMedia('(pointer: coarse)').matches"))
 
 func _draw_touch_guide() -> void:
+	var screen_size := get_viewport_rect().size
 	var alpha: float = clamp(intro_time_left / 1.25, 0.0, 1.0) * 0.88
-	draw_rect(Rect2(20.0, VIEW.y - 190.0, VIEW.x * 0.46, 145.0), Color(0.10, 0.45, 0.55, alpha * 0.42))
-	draw_rect(Rect2(VIEW.x * 0.54, VIEW.y - 190.0, VIEW.x * 0.44, 145.0), Color(0.55, 0.18, 0.55, alpha * 0.42))
-	draw_string(ThemeDB.fallback_font, Vector2(0, VIEW.y - 158.0), "GET READY", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 24, Color(1.0, 0.95, 0.72, alpha))
-	draw_string(ThemeDB.fallback_font, Vector2(30.0, VIEW.y - 92.0), "TAP TO JUMP", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x * 0.43, 22, Color(0.66, 1.0, 0.83, alpha))
-	draw_string(ThemeDB.fallback_font, Vector2(VIEW.x * 0.55, VIEW.y - 92.0), "TAP TO DASH", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x * 0.40, 22, Color(1.0, 0.72, 0.88, alpha))
-	draw_circle(Vector2(VIEW.x * 0.23, VIEW.y - 54.0), 18.0, Color(0.66, 1.0, 0.83, alpha * 0.8))
-	draw_line(Vector2(VIEW.x * 0.23, VIEW.y - 50.0), Vector2(VIEW.x * 0.23, VIEW.y - 72.0), Color("#182450"), 5.0)
-	draw_colored_polygon(PackedVector2Array([Vector2(VIEW.x * 0.23, VIEW.y - 82.0), Vector2(VIEW.x * 0.22, VIEW.y - 68.0), Vector2(VIEW.x * 0.24, VIEW.y - 68.0)]), Color("#182450"))
-	draw_line(Vector2(VIEW.x * 0.77 - 28.0, VIEW.y - 54.0), Vector2(VIEW.x * 0.77 + 28.0, VIEW.y - 54.0), Color("#182450"), 7.0)
-	draw_colored_polygon(PackedVector2Array([Vector2(VIEW.x * 0.77 + 38.0, VIEW.y - 54.0), Vector2(VIEW.x * 0.77 + 20.0, VIEW.y - 66.0), Vector2(VIEW.x * 0.77 + 20.0, VIEW.y - 42.0)]), Color("#182450"))
+	var jump_rect := _touch_jump_rect().grow(-12.0)
+	var dash_rect := _touch_dash_rect().grow(-12.0)
+	draw_rect(jump_rect, Color(0.10, 0.45, 0.55, alpha * 0.42))
+	draw_rect(dash_rect, Color(0.55, 0.18, 0.55, alpha * 0.42))
+	draw_string(ThemeDB.fallback_font, Vector2(0, screen_size.y * 0.60), "GET READY", HORIZONTAL_ALIGNMENT_CENTER, screen_size.x, 24, Color(1.0, 0.95, 0.72, alpha))
+	draw_string(ThemeDB.fallback_font, Vector2(jump_rect.position.x, jump_rect.position.y + 58.0), "TAP TO JUMP", HORIZONTAL_ALIGNMENT_CENTER, jump_rect.size.x, 22, Color(0.66, 1.0, 0.83, alpha))
+	draw_string(ThemeDB.fallback_font, Vector2(dash_rect.position.x, dash_rect.position.y + 58.0), "TAP TO DASH", HORIZONTAL_ALIGNMENT_CENTER, dash_rect.size.x, 22, Color(1.0, 0.72, 0.88, alpha))
+	var jump_center := jump_rect.position + Vector2(jump_rect.size.x * 0.5, 104.0)
+	var dash_center := dash_rect.position + Vector2(dash_rect.size.x * 0.5, 104.0)
+	draw_circle(jump_center, 18.0, Color(0.66, 1.0, 0.83, alpha * 0.8))
+	draw_line(jump_center + Vector2(0, 4), jump_center - Vector2(0, 18), Color("#182450"), 5.0)
+	draw_colored_polygon(PackedVector2Array([jump_center - Vector2(0, 28), jump_center - Vector2(10, 14), jump_center + Vector2(10, 14)]), Color("#182450"))
+	draw_line(dash_center - Vector2(28, 0), dash_center + Vector2(28, 0), Color("#182450"), 7.0)
+	draw_colored_polygon(PackedVector2Array([dash_center + Vector2(38, 0), dash_center + Vector2(20, -12), dash_center + Vector2(20, 12)]), Color("#182450"))
 
 func _draw_landing_trace() -> void:
 	var step := 0.045
@@ -1061,7 +1087,8 @@ func _draw_hud() -> void:
 
 func _draw_title() -> void:
 	draw_rect(Rect2(Vector2.ZERO, VIEW), Color(0.02, 0.03, 0.10, 0.78)); draw_string(ThemeDB.fallback_font, Vector2(0, 68), "NEON TWICE", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 54, Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, Vector2(0, 108), "SHOP" if shop_open else "CHOOSE YOUR BEAT", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 20, Color("#f5e27e"))
-	draw_rect(SHOP_BUTTON_RECT, Color("#26336e") if not shop_open else Color("#55d68a")); draw_rect(SHOP_BUTTON_RECT, Color("#7cf5ff"), false, 3.0); draw_string(ThemeDB.fallback_font, SHOP_BUTTON_RECT.position + Vector2(14, 24), "SHOP  ♦ %03d" % diamonds, HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color("#ffffff"))
+	var shop_button := _shop_button_rect()
+	draw_rect(shop_button, Color("#55d68a") if shop_open else Color("#26336e")); draw_rect(shop_button, Color("#7cf5ff"), false, 3.0); draw_string(ThemeDB.fallback_font, shop_button.position + Vector2(14, 24), "BACK" if shop_open else "SHOP  ♦ %03d" % diamonds, HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color("#ffffff"))
 	if shop_open:
 		_draw_shop(); return
 	for i in range(LEVEL_COUNT):
