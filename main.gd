@@ -277,7 +277,10 @@ func _input(event: InputEvent) -> void:
 			else: _start_dash()
 
 func _start_run() -> void:
-	if not started: shield_hits = 3; invulnerability = 0.0; score = 0; combo = 0; quiz_points = 0; quiz_streak = 0
+	if not started:
+		if selected_level_index != level_index:
+			_apply_level(LevelData.campaign_level(selected_level_index)); player = Vector2(START_X, FLOOR_Y - PLAYER_SIZE.y); velocity = Vector2.ZERO; camera_x = 0.0; run_time = 0.0; checkpoint_index = 0
+		shield_hits = 3; invulnerability = 0.0; score = 0; combo = 0; quiz_points = 0; quiz_streak = 0
 	started = true; paused = false; _ensure_music(); message = "%s • FIND THE BEAT" % str(level["display_name"]); message_time = 1.5
 
 func _level_choice_rect(index: int) -> Rect2:
@@ -343,9 +346,6 @@ func _builder_key(key: Key) -> void:
 	if key == KEY_R: _apply_level(LevelData.campaign_level(level_index)); message = "DEFAULT LEVEL RESTORED"; message_time = 1.2; return
 	if key >= KEY_1 and key <= KEY_9: selected_palette = clamp(key - KEY_1, 0, PALETTE.size() - 1)
 	if key == KEY_0: selected_palette = 9
-
-func _music_button_rect() -> Rect2:
-	return Rect2(430, 470, 420, 58)
 
 func _reset_edit_history() -> void:
 	undo_stack = [level.duplicate(true)]
