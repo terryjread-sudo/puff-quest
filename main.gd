@@ -15,6 +15,7 @@ const LEVEL_COUNT := 3
 const BEAT_FLASH_STRENGTH := 0.055
 const INTRO_CLEAR_SECONDS := 6.0
 const SLAM_INTERVAL_BEATS := 8.0
+const AUDIO_RESYNC_SECONDS := 0.28
 const SHOP_BUTTON_SIZE := Vector2(190.0, 54.0)
 const SKINS := [
 	{"id": "classic", "name": "CLASSIC CYAN", "cost": 0, "body": "#75f1ff", "core": "#f5e27e", "animated": false},
@@ -99,6 +100,9 @@ var slam_velocity := 0.0
 var slam_timer := 0.0
 var slam_flash := 0.0
 var music_last_position := 0.0
+var music_expected_playing := false
+var audio_resync_time := 0.0
+var audio_resync_position := 0.0
 var undo_stack: Array = []
 var redo_stack: Array = []
 var clipboard_object: Dictionary = {}
@@ -146,10 +150,12 @@ func _load_level_music() -> void:
 	music_player.stream = stream
 	music_started = false
 	music_last_position = 0.0
+	music_expected_playing = false
 	music_player.stream_paused = false
 
 func _ensure_music() -> void:
 	if music_player == null or music_player.stream == null: return
+	music_expected_playing = true
 	if not music_player.playing: music_player.play(music_last_position)
 	music_player.stream_paused = false
 	music_started = true
@@ -157,16 +163,23 @@ func _ensure_music() -> void:
 func _resume_music(position: float = -1.0) -> void:
 	if music_player == null or music_player.stream == null: return
 	if position >= 0.0: music_last_position = position
+	music_expected_playing = true
+	audio_resync_time = 0.0
 	music_player.stream_paused = false
 	music_player.play(music_last_position)
 	music_started = true
 
 func _maintain_music() -> void:
-	if music_player == null or music_player.stream == null or not started or paused or build_mode: return
+	if music_player == null or music_player.stream == null or not started or paused or build_mode or not music_expected_playing: return
 	if music_player.playing and not music_player.stream_paused:
 		music_last_position = music_player.get_playback_position()
 		return
-	_resume_music(music_last_position)
+	if audio_resync_time <= 0.0:
+		audio_resync_position = music_last_position
+		audio_resync_time = AUDIO_RESYNC_SECONDS
+
+func _finish_audio_resync() -> void:
+	_resume_music(audio_resync_position)
 
 func _music_beat() -> float:
 	return 60.0 / float(level["music"]["bpm"])
@@ -206,6 +219,10 @@ func _process(delta: float) -> void:
 	_update_particles(dt)
 	if music_player != null: music_player.pitch_scale = 0.26 if quiz_active else _pace_multiplier()
 	_maintain_music()
+	if audio_resync_time > 0.0:
+		audio_resync_time = max(0.0, audio_resync_time - dt)
+		if audio_resync_time <= 0.0: _finish_audio_resync()
+		queue_redraw(); return
 	if quiz_feedback_time > 0.0:
 		quiz_feedback_time -= dt
 		if quiz_feedback_time <= 0.0: _resolve_quiz_feedback()
@@ -291,6 +308,7 @@ func _input(event: InputEvent) -> void:
 		elif build_mode: _exit_builder()
 		else: paused = not paused
 		if paused or build_mode:
+			music_expected_playing = false
 			if music_player != null: music_player.stream_paused = true
 		else: _resume_music()
 		return
@@ -298,10 +316,10 @@ func _input(event: InputEvent) -> void:
 		if event is InputEventKey and event.pressed and not event.echo and (event.keycode == KEY_ESCAPE or event.keycode == KEY_S):
 			shop_open = false; message = "SELECT A LEVEL"; message_time = 0.8; return
 		if event is InputEventMouseButton and event.pressed:
-			if _shop_button_rect().has_point(event.position): shop_open = false; return
+			if _shop_button_hit(event.position): shop_open = false; return
 			_shop_click(event.position); return
 		if event is InputEventScreenTouch and event.pressed:
-			if _shop_button_rect().has_point(event.position): shop_open = false; return
+			if _shop_button_hit(event.position): shop_open = false; return
 			_shop_click(event.position); return
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -341,7 +359,7 @@ func _input(event: InputEvent) -> void:
 		elif not quiz_active: _start_dash()
 	if event is InputEventMouseButton and event.pressed:
 		if not started:
-			if _shop_button_rect().has_point(event.position): shop_open = true; return
+			if _shop_button_hit(event.position): shop_open = true; return
 			var level_choice: int = _level_choice_at(event.position)
 			if level_choice >= 0: _choose_level(level_choice)
 			else: _start_run()
@@ -349,7 +367,7 @@ func _input(event: InputEvent) -> void:
 		elif _touch_dash_rect().has_point(event.position): _start_dash()
 	if event is InputEventScreenTouch and event.pressed:
 		if not started:
-			if _shop_button_rect().has_point(event.position): shop_open = true; return
+			if _shop_button_hit(event.position): shop_open = true; return
 			var level_touch_choice: int = _level_choice_at(event.position)
 			if level_touch_choice >= 0: _choose_level(level_touch_choice)
 			else: _start_run()
@@ -384,6 +402,7 @@ func _choose_level(index: int) -> void:
 
 func _return_to_menu() -> void:
 	started = false; finished = false; paused = false; build_mode = false; quiz_active = false; quiz_feedback_time = 0.0; crash_timer = 0.0; camera_x = 0.0; run_time = 0.0; shop_open = false
+	music_expected_playing = false
 	if music_player != null: music_player.stop()
 	_apply_level(LevelData.campaign_level(selected_level_index))
 	message = "SELECT A LEVEL"; message_time = 1.0
@@ -430,6 +449,11 @@ func _shop_button_rect() -> Rect2:
 	var screen_size := get_viewport_rect().size
 	return Rect2(max(20.0, screen_size.x - SHOP_BUTTON_SIZE.x - 55.0), 28.0, SHOP_BUTTON_SIZE.x, SHOP_BUTTON_SIZE.y)
 
+func _shop_button_hit(pos: Vector2) -> bool:
+	var screen_rect := _shop_button_rect()
+	var logical_rect := Rect2(VIEW.x - SHOP_BUTTON_SIZE.x - 55.0, 28.0, SHOP_BUTTON_SIZE.x, SHOP_BUTTON_SIZE.y)
+	return screen_rect.grow(16.0).has_point(pos) or logical_rect.grow(16.0).has_point(pos)
+
 func _touch_jump_rect() -> Rect2:
 	var screen_size := get_viewport_rect().size
 	return Rect2(0.0, screen_size.y * 0.62, screen_size.x * 0.55, screen_size.y * 0.38)
@@ -457,6 +481,7 @@ func _restart_run() -> void:
 func _toggle_builder() -> void:
 	build_mode = not build_mode; paused = build_mode
 	if build_mode: _reset_edit_history()
+	music_expected_playing = not build_mode
 	if music_player != null: music_player.stream_paused = build_mode
 	message = "BUILDER ON" if build_mode else "RUN RESUMED"; message_time = 1.0
 
@@ -1081,6 +1106,7 @@ func _draw_hud() -> void:
 	draw_rect(Rect2(24, 20, 690, 80), Color(0.04, 0.06, 0.16, 0.84)); draw_string(ThemeDB.fallback_font, Vector2(44, 52), "%02d  %s" % [level_index + 1, str(level["display_name"])], HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, Vector2(44, 80), "SCORE %06d    COMBO x%d    SHIELD %d/3    ♦ %03d" % [score, combo, shield_hits, diamonds], HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#f5e27e"))
 	draw_string(ThemeDB.fallback_font, Vector2(VIEW.x - 300, 46), "%d BPM  •  %s" % [int(level["music"]["bpm"]), "BUILDER" if build_mode else ("SLOWED" if quiz_active else ("CHASE" if _chase_active() else "ON BEAT"))], HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color("#cbbaff")); draw_string(ThemeDB.fallback_font, Vector2(VIEW.x - 300, 76), "DISTANCE %04d m" % int(player.x / 10.0), HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#8fa8df"))
 	if quiz_streak > 0: draw_string(ThemeDB.fallback_font, Vector2(470, 52), "QUIZ STREAK x%d" % quiz_streak, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#a8ffd0"))
+	if audio_resync_time > 0.0: draw_string(ThemeDB.fallback_font, Vector2(0, 145), "RESYNCING BEAT %.1f" % audio_resync_time, HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 19, Color("#a8ffd0"))
 	if message_time > 0.0: draw_string(ThemeDB.fallback_font, Vector2(VIEW.x / 2 - 200, 145), message, HORIZONTAL_ALIGNMENT_CENTER, 400, 22, Color("#ffffff"))
 	if crash_timer > 0.0: draw_string(ThemeDB.fallback_font, Vector2(0, 188), "%s  •  TAP / SPACE TO RETRY NOW" % crash_reason, HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 18, Color("#ffb6c9"))
 	if started and not quiz_active and not build_mode and not finished: draw_string(ThemeDB.fallback_font, Vector2(34, VIEW.y - 30), "SPACE / TAP JUMP     X / TAP DASH     B BUILD", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.8, 0.9, 1.0, 0.7))
