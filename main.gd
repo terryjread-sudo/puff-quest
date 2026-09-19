@@ -29,6 +29,7 @@ var dash_cooldown := 0.0
 var jump_buffer := 0.0
 var coyote := 0.0
 var run_time := 0.0
+var background_time := 0.0
 var quiz_active := false
 var quiz_time := 0.0
 var quiz_number := 0
@@ -91,6 +92,7 @@ func _beat_width() -> float:
 
 func _process(delta: float) -> void:
 	var dt := min(delta, 0.05)
+	background_time += dt
 	message_time = max(0.0, message_time - dt); flash = max(0.0, flash - dt)
 	_update_particles(dt)
 	if music_player != null: music_player.pitch_scale = 0.26 if quiz_active else 1.0
@@ -365,11 +367,75 @@ func _draw() -> void:
 	if flash > 0.0: draw_rect(Rect2(Vector2.ZERO, VIEW), Color(1.0, 0.35, 0.5, flash * 0.35))
 
 func _draw_background() -> void:
-	draw_rect(Rect2(Vector2.ZERO, VIEW), Color("#0b102b"))
-	for band in range(9): draw_rect(Rect2(0, band * 80, VIEW.x, 82), Color("#111a3d").lerp(Color("#281b55"), float(band) / 9.0))
+	var pulse := 0.5 + 0.5 * sin(background_time * TAU / _music_beat())
+	draw_rect(Rect2(Vector2.ZERO, VIEW), Color("#17143e"))
+	for band in range(9): draw_rect(Rect2(0, band * 80, VIEW.x, 82), Color("#21194e").lerp(Color("#583070"), float(band) / 9.0))
 	for x in range(-100, 1500, 100):
-		var sx := fmod(x - camera_x * 0.15, 1500.0); draw_line(Vector2(sx, 0), Vector2(sx - 260, VIEW.y), Color(0.3, 0.5, 0.9, 0.08), 1.0)
-	for y in range(80, 600, 80): draw_line(Vector2(0, y), Vector2(VIEW.x, y), Color(0.3, 0.5, 0.9, 0.09), 1.0)
+		var sx := fmod(x - camera_x * 0.15, 1500.0); draw_line(Vector2(sx, 0), Vector2(sx - 260, VIEW.y), Color(0.7, 0.45, 0.95, 0.11), 1.0)
+	for y in range(80, 600, 80): draw_line(Vector2(0, y), Vector2(VIEW.x, y), Color(0.7, 0.45, 0.95, 0.10), 1.0)
+	_draw_kawaii_bone_carnival(pulse)
+
+func _draw_kawaii_bone_carnival(pulse: float) -> void:
+	# Original pastel spooky-cute background set piece: all shapes are drawn in code.
+	var drift := sin(background_time * 0.7)
+	var moon := Vector2(1000.0 + drift * 34.0, 178.0 + sin(background_time * 0.45) * 12.0)
+	draw_circle(moon, 108.0 + pulse * 7.0, Color(1.0, 0.78, 0.88, 0.16))
+	draw_circle(moon, 82.0, Color("#ffd8ed"))
+	draw_circle(moon + Vector2(24, -10), 9.0, Color("#eaaed3"))
+	draw_circle(moon + Vector2(-30, 28), 6.0, Color("#eaaed3"))
+	draw_circle(moon + Vector2(36, 35), 5.0, Color("#eaaed3"))
+
+	# A giant happy bone mascot peeks over the skyline and bobs with the beat.
+	var mascot := Vector2(1030.0 + sin(background_time * 0.55) * 28.0, 292.0 + pulse * 9.0)
+	var jaw_open := 12.0 + pulse * 20.0
+	draw_circle(mascot, 126.0, Color(0.98, 0.92, 0.83, 0.95))
+	draw_circle(mascot + Vector2(-43, 18), 35.0, Color("#fff5dd"))
+	draw_circle(mascot + Vector2(43, 18), 35.0, Color("#fff5dd"))
+	draw_circle(mascot + Vector2(-42, -22), 22.0, Color("#34245e"))
+	draw_circle(mascot + Vector2(42, -22), 22.0, Color("#34245e"))
+	draw_circle(mascot + Vector2(-42, -22), 8.0 + pulse * 3.0, Color("#7cf5ff"))
+	draw_circle(mascot + Vector2(42, -22), 8.0 + pulse * 3.0, Color("#7cf5ff"))
+	draw_arc(mascot + Vector2(0, 15), 48.0 + jaw_open, 0.15, PI - 0.15, 20, Color("#34245e"), 8.0)
+	for tooth in range(5):
+		var tooth_x := mascot.x - 28.0 + tooth * 14.0
+		draw_colored_polygon(PackedVector2Array([Vector2(tooth_x, mascot.y + 35.0), Vector2(tooth_x + 8, mascot.y + 35.0), Vector2(tooth_x + 4, mascot.y + 48.0)]), Color("#fff5dd"))
+	draw_circle(mascot + Vector2(-74, 36), 8.0, Color("#ff9dbc"))
+	draw_circle(mascot + Vector2(74, 36), 8.0, Color("#ff9dbc"))
+
+	# Waving bone arms make the scene feel alive without affecting the level.
+	var wave := sin(background_time * 2.0) * 16.0
+	_draw_bone_arm(Vector2(850, 420), Vector2(790 + wave, 300), -0.45)
+	_draw_bone_arm(Vector2(1190, 430), Vector2(1235 - wave, 300), 0.45)
+
+	# Tiny pastel ghost friends drift in a slow parade.
+	for i in range(5):
+		var ghost_x := fmod(120.0 + i * 250.0 + background_time * (18.0 + i * 4.0), 1500.0) - 80.0
+		var ghost_y := 150.0 + i * 32.0 + sin(background_time * 1.2 + i * 1.7) * 24.0
+		_draw_cute_ghost(Vector2(ghost_x, ghost_y), [Color("#b8f4ff"), Color("#e8c8ff"), Color("#ffd0e5")][i % 3], 0.62)
+
+	# Beat sparkles pop around the mascot like a cartoon celebration.
+	for i in range(8):
+		var angle := background_time * 0.8 + i * TAU / 8.0
+		var sparkle := mascot + Vector2(cos(angle), sin(angle)) * (155.0 + pulse * 18.0)
+		_draw_sparkle(sparkle, 5.0 + pulse * 4.0, Color("#f5e27e"))
+
+func _draw_bone_arm(shoulder: Vector2, hand: Vector2, tilt: float) -> void:
+	draw_line(shoulder, hand, Color("#fff5dd"), 24.0)
+	draw_circle(shoulder, 18.0, Color("#fff5dd"))
+	draw_circle(hand, 28.0, Color("#fff5dd"))
+	draw_circle(hand + Vector2(cos(tilt) * 24.0, sin(tilt) * 24.0), 11.0, Color("#fff5dd"))
+
+func _draw_cute_ghost(pos: Vector2, tint: Color, alpha: float) -> void:
+	var body := Color(tint, alpha)
+	draw_circle(pos + Vector2(0, -13), 28.0, body)
+	draw_rect(Rect2(pos.x - 28, pos.y - 14, 56, 31), body)
+	for i in range(3): draw_circle(Vector2(pos.x - 20 + i * 20, pos.y + 18), 10.0, body)
+	draw_circle(pos + Vector2(-9, -15), 5.0, Color("#34245e"))
+	draw_circle(pos + Vector2(9, -15), 5.0, Color("#34245e"))
+	draw_circle(pos + Vector2(0, 0), 4.0, Color("#ff9dbc"))
+
+func _draw_sparkle(pos: Vector2, size: float, color: Color) -> void:
+	draw_colored_polygon(PackedVector2Array([pos + Vector2(0, -size), pos + Vector2(size * 0.35, -size * 0.35), pos + Vector2(size, 0), pos + Vector2(size * 0.35, size * 0.35), pos + Vector2(0, size), pos + Vector2(-size * 0.35, size * 0.35), pos + Vector2(-size, 0), pos + Vector2(-size * 0.35, -size * 0.35)]), color)
 
 func _draw_world() -> void:
 	draw_rect(Rect2(0, FLOOR_Y, VIEW.x, VIEW.y - FLOOR_Y), Color("#151b3d"))
