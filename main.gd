@@ -277,7 +277,7 @@ func _check_objects() -> void:
 			"spike", "block":
 				if dash_left > 0.0: score += 40; consumed[id] = true; _spawn_burst(rect.position + rect.size * 0.5, Color("#ff698f"), 14)
 				else: _crash("HIT THE BEAT WALL")
-		"laser_gate":
+			"laser_gate":
 				var period: float = float(object["properties"].get("period", 4.0)); var on_beats: float = float(object["properties"].get("on_beats", 2.0))
 				if fmod(run_time, period * _music_beat()) < on_beats * _music_beat() and dash_left <= 0.0: _crash("LASER TIMING MISS")
 			"bounce_pad": velocity.y = JUMP_VELOCITY * float(object["properties"].get("strength", 1.0)); consumed[id] = true; _combo_event("BOUNCE")
