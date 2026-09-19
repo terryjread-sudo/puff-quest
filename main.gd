@@ -705,7 +705,7 @@ func _draw_background() -> void:
 		"metro": _draw_metro_background(pulse, fill_size)
 		"boss": _draw_boss_background(pulse, fill_size)
 		_: _draw_kawaii_bone_carnival(pulse)
-	if _chase_active(): _draw_chaser()
+	if theme == "skeleton": _draw_chaser()
 	draw_rect(Rect2(Vector2.ZERO, fill_size), Color(0.92, 0.96, 1.0, BEAT_FLASH_STRENGTH * _beat_pulse()))
 
 func _draw_beat_layers(fill_size: Vector2, pulse: float) -> void:
@@ -775,7 +775,9 @@ func _draw_boss_background(pulse: float, fill_size: Vector2) -> void:
 func _draw_chaser() -> void:
 	# A huge kawaii skeleton now crawls behind the runner: only its head,
 	# shoulders and floor-scraping arms are visible above the horizon.
-	var chaser_x: float = clampf(player.x - camera_x - 250.0, 150.0, 470.0)
+	var chase_mode: bool = _chase_active()
+	var chaser_offset: float = 250.0 if chase_mode else 350.0
+	var chaser_x: float = clampf(player.x - camera_x - chaser_offset, 150.0, 470.0)
 	var crawl: float = sin(background_time * 5.0)
 	var head: Vector2 = Vector2(chaser_x, 184.0 + sin(background_time * 2.3) * 7.0)
 	var shoulder_y: float = head.y + 104.0
