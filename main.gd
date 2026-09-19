@@ -66,6 +66,7 @@ var message_time := 0.0
 var selected_palette := 0
 var rng := RandomNumberGenerator.new()
 var music_player: AudioStreamPlayer
+var skeleton_sprite: Texture2D
 var music_started := false
 var gravity_sign := 1.0
 var gravity_until := 0.0
@@ -93,6 +94,7 @@ func _ready() -> void:
 	_load_progress()
 	_apply_level(LevelData.campaign_level(0))
 	_setup_music()
+	skeleton_sprite = load("res://assets/skeleton-run-spritesheet.png") as Texture2D
 	queue_redraw()
 
 func _apply_level(data: Dictionary) -> void:
@@ -776,66 +778,27 @@ func _draw_chaser() -> void:
 	var chase_mode: bool = _chase_active()
 	var chaser_offset: float = 250.0 if chase_mode else 350.0
 	var chaser_x: float = clampf(player.x - camera_x - chaser_offset, 150.0, 470.0)
-	var leader_origin: Vector2 = Vector2(chaser_x, 440.0)
-	_draw_marching_skeleton(leader_origin, 3.4, Color("#fff5dd"), 0.0, true)
+	var leader_origin: Vector2 = Vector2(chaser_x, 580.0)
+	_draw_marching_skeleton(leader_origin, 1.0, Color("#fff5dd"), 0.0, true)
 	for object in runtime_objects:
 		var target_x: float = _object_x(object) - camera_x
 		if target_x > chaser_x and target_x < VIEW.x + 120.0:
-			draw_line(leader_origin + Vector2(112.0, -36.0), Vector2(target_x, FLOOR_Y - 36.0), Color(1.0, 0.45, 0.62, 0.28), 3.0)
-
-func _draw_marching_bone(start: Vector2, end: Vector2, bone: Color, shadow: Color, width: float) -> void:
-	draw_line(start, end, shadow, width + 5.0)
-	draw_line(start, end, bone, width)
-	draw_circle(start, width * 0.58, bone)
-	draw_circle(end, width * 0.58, bone)
+			draw_line(Vector2(chaser_x + 128.0, 270.0), Vector2(target_x, FLOOR_Y - 36.0), Color(1.0, 0.45, 0.62, 0.28), 3.0)
 
 func _draw_marching_skeleton(origin: Vector2, scale: float, tint: Color, phase_offset: float, leader: bool) -> void:
-	var frame_count: float = 6.0
-	var frame_float: float = fmod(background_time / _music_beat() * 3.0 + phase_offset, frame_count)
-	var frame: int = int(floor(frame_float))
-	var stride_values: Array = [0.0, 0.72, 1.0, 0.0, -0.72, -1.0]
-	var stride: float = float(stride_values[frame])
-	var bounce: float = 0.0 if frame == 0 or frame == 3 else 1.5
-	var alpha: float = 0.92 if leader else 0.74
-	var bone: Color = Color(tint, alpha)
-	var shadow: Color = Color(0.12, 0.08, 0.26, alpha * 0.82)
-	var socket: Color = Color("#34245e")
-	var head: Vector2 = Vector2(5.0, -76.0)
-	var neck: Vector2 = Vector2(1.0, -54.0)
-	var shoulder: Vector2 = Vector2(0.0, -44.0)
-	var pelvis: Vector2 = Vector2(0.0, 0.0)
-	var front_elbow: Vector2 = shoulder + Vector2(21.0 + stride * 13.0, 17.0)
-	var front_hand: Vector2 = shoulder + Vector2(30.0 + stride * 22.0, 39.0)
-	var back_elbow: Vector2 = shoulder + Vector2(-17.0 - stride * 11.0, 15.0)
-	var back_hand: Vector2 = shoulder + Vector2(-27.0 - stride * 18.0, 38.0)
-	var front_knee: Vector2 = pelvis + Vector2(12.0 + stride * 17.0, 25.0)
-	var front_foot: Vector2 = pelvis + Vector2(15.0 + stride * 32.0, 52.0)
-	var back_knee: Vector2 = pelvis + Vector2(-11.0 - stride * 16.0, 25.0)
-	var back_foot: Vector2 = pelvis + Vector2(-15.0 - stride * 29.0, 52.0)
-	var transform_origin: Vector2 = origin + Vector2(0.0, bounce)
-	draw_set_transform(transform_origin, 0.0, Vector2(scale, scale))
-	_draw_marching_bone(shoulder + Vector2(-5.0, 0.0), back_elbow, bone, shadow, 5.0)
-	_draw_marching_bone(back_elbow, back_hand, bone, shadow, 4.0)
-	_draw_marching_bone(pelvis + Vector2(-4.0, 0.0), back_knee, bone, shadow, 6.0)
-	_draw_marching_bone(back_knee, back_foot, bone, shadow, 5.0)
-	_draw_marching_bone(shoulder + Vector2(5.0, 0.0), front_elbow, bone, shadow, 6.0)
-	_draw_marching_bone(front_elbow, front_hand, bone, shadow, 5.0)
-	_draw_marching_bone(pelvis + Vector2(4.0, 0.0), front_knee, bone, shadow, 7.0)
-	_draw_marching_bone(front_knee, front_foot, bone, shadow, 6.0)
-	draw_line(neck, pelvis, shadow, 9.0)
-	draw_line(neck, pelvis, bone, 5.0)
-	for rib in range(3):
-		var rib_center: Vector2 = Vector2(0.0, -36.0 + rib * 9.0)
-		draw_arc(rib_center, 18.0 - rib * 1.5, 0.08, PI - 0.08, 12, bone, 3.0)
-	draw_circle(pelvis, 8.0, bone)
-	draw_circle(head, 18.0, bone)
-	draw_circle(head + Vector2(-5.0, -3.0), 5.0, socket)
-	draw_circle(head + Vector2(7.0, -3.0), 3.0, socket)
-	draw_line(head + Vector2(11.0, 6.0), head + Vector2(23.0, 8.0), bone, 4.0)
-	for tooth in range(3):
-		var tooth_x: float = head.x + 13.0 + tooth * 5.0
-		draw_colored_polygon(PackedVector2Array([Vector2(tooth_x, head.y + 9.0), Vector2(tooth_x + 3.0, head.y + 9.0), Vector2(tooth_x + 1.5, head.y + 15.0)]), bone)
-	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	if skeleton_sprite == null: return
+	var sprite_frame_count: float = 12.0
+	var sprite_frame_position: float = fmod(background_time / _music_beat() * 6.0 + phase_offset, sprite_frame_count)
+	var sprite_frame_index: int = int(floor(sprite_frame_position))
+	var sprite_cell_size: Vector2 = Vector2(300.0, 396.0)
+	var sprite_column: int = sprite_frame_index % 4
+	var sprite_row: int = int(sprite_frame_index / 4)
+	var sprite_source_rect: Rect2 = Rect2(Vector2(sprite_column * 300.0, sprite_row * 396.0), sprite_cell_size)
+	var sprite_destination_size: Vector2 = sprite_cell_size * scale
+	var sprite_destination: Rect2 = Rect2(origin - Vector2(sprite_destination_size.x * 0.5, sprite_destination_size.y), sprite_destination_size)
+	var sprite_opacity: float = (0.98 if leader else 0.84) * tint.a
+	draw_texture_rect_region(skeleton_sprite, sprite_destination, sprite_source_rect, Color(1.0, 1.0, 1.0, sprite_opacity))
+	return
 
 func _draw_kawaii_bone_carnival(pulse: float) -> void:
 	# Original pastel spooky-cute background set piece: all shapes are drawn in code.
@@ -861,9 +824,9 @@ func _draw_kawaii_bone_carnival(pulse: float) -> void:
 		draw_line(Vector2(confetti_x, confetti_y), Vector2(confetti_x + 9.0, confetti_y + 12.0), Color(confetti_color, 0.65), 4.0)
 	for i in range(5):
 		var parade_x: float = fmod(180.0 + i * 300.0 + background_time * (48.0 + i * 7.0) - camera_x * 0.22, 1680.0) - 140.0
-		var parade_y: float = 485.0 + sin(background_time * 2.0 + i) * 5.0
+		var parade_y: float = 570.0 + sin(background_time * 2.0 + i) * 3.0
 		var parade_tint: Color = [Color("#fff5dd"), Color("#ffd8ed"), Color("#d7f8ff")][i % 3]
-		_draw_marching_skeleton(Vector2(parade_x, parade_y), 1.0, parade_tint, float(i) * 0.85, false)
+		_draw_marching_skeleton(Vector2(parade_x, parade_y), 0.34, parade_tint, float(i) * 0.85, false)
 
 	# Beat sparkles pop across the parade like a cartoon celebration.
 	for i in range(8):

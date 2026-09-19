@@ -29,6 +29,7 @@ Open this folder in Godot 4.x and run `main.tscn`. The Web export can be configu
 - Wrong or late answers show the multiplication correction before applying the shield/checkpoint consequence.
 - Jump timing is rated as PERFECT, GOOD, or normal, with bonus score for landing the jump input on the song beat.
 - Level 1 changes tempo and starts a kawaii skeleton chase halfway through, with seeded thrown hazards so the surprise remains fair.
+- Level 1 uses a local transparent sprite sheet of the supplied detailed running-skeleton reference, with twelve beat-synchronised poses for the parade and giant leader.
 - Catapult launches now accelerate the cube forward over their beat duration instead of teleporting it.
 - Progress and best scores are saved in browser local storage.
 - All runtime values live in `main.gd` until the game grows into a multi-level data resource.
@@ -38,3 +39,7 @@ Open this folder in Godot 4.x and run `main.tscn`. The Web export can be configu
 - Cyberpunk Menu Music — OpenGameArt.org source supplied for this project.
 - Murder on the Metrorail — joeBaxterWebb, ISAo, and SRG774; CC-BY 4.0 / OGA-BY 3.0 components.
 - Boss Fight — AiTechEye; OGA-BY 4.0.
+
+## Visual reference
+
+- Running skeleton reference supplied for this project: [Fabled Frame skeleton walk](https://cdnb.artstation.com/p/assets/images/images/033/489/979/original/fabled-frame-skeleton-walk.gif?1609769783).
