@@ -7,6 +7,7 @@ const project = read('project.godot');
 const scene = read('main.tscn');
 const game = read('main.gd');
 const data = read('level_data.gd');
+const shell = read('web_shell.html');
 
 assert.match(project, /config\/name="Neon Twice"/);
 assert.match(project, /run\/main_scene="res:\/\/main\.tscn"/);
@@ -26,6 +27,9 @@ assert.match(game, /func _draw_builder/);
 assert.match(data, /static func validate/);
 assert.match(data, /moving_platform/);
 assert.match(data, /quiz/);
+assert.match(shell, /width: 100vw/);
+assert.match(shell, /height: 100dvh/);
+assert.match(read('export_presets.cfg'), /html\/custom_html_shell="res:\/\/web_shell\.html"/);
 assert.doesNotMatch(game, /Puff Quest|Puffo|Meadow/);
 
 console.log('Neon Twice static checks passed.');

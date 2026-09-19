@@ -277,7 +277,7 @@ func _check_objects() -> void:
 			"spike", "block":
 				if dash_left > 0.0: score += 40; consumed[id] = true; _spawn_burst(rect.position + rect.size * 0.5, Color("#ff698f"), 14)
 				else: _crash("HIT THE BEAT WALL")
-			"laser_gate":
+		"laser_gate":
 				var period: float = float(object["properties"].get("period", 4.0)); var on_beats: float = float(object["properties"].get("on_beats", 2.0))
 				if fmod(run_time, period * _music_beat()) < on_beats * _music_beat() and dash_left <= 0.0: _crash("LASER TIMING MISS")
 			"bounce_pad": velocity.y = JUMP_VELOCITY * float(object["properties"].get("strength", 1.0)); consumed[id] = true; _combo_event("BOUNCE")
@@ -451,7 +451,10 @@ func _draw_object(object: Dictionary) -> void:
 	match kind:
 		"spike": draw_colored_polygon(PackedVector2Array([Vector2(rect.position.x, FLOOR_Y), Vector2(center.x, rect.position.y), Vector2(rect.end.x, FLOOR_Y)]), Color("#ff638c"))
 		"block": draw_rect(rect, Color("#b06cff"))
-		"laser_gate": draw_line(Vector2(center.x, rect.position.y), Vector2(center.x, rect.end.y), Color("#ff638c"), 8.0)
+		"laser_gate":
+			var laser_period: float = float(object["properties"].get("period", 4.0)); var laser_on: float = float(object["properties"].get("on_beats", 2.0)); var active := fmod(run_time, laser_period * _music_beat()) < laser_on * _music_beat()
+			draw_line(Vector2(center.x, rect.position.y), Vector2(center.x, rect.end.y), Color("#ff638c") if active else Color("#7cf5ff"), 8.0)
+			draw_string(ThemeDB.fallback_font, Vector2(center.x - 35, rect.position.y - 10), "ON" if active else "OFF", HORIZONTAL_ALIGNMENT_CENTER, 70, 12, Color("#ffb6c9") if active else Color("#a9f8ff"))
 		"catapult": draw_rect(rect, Color("#f2d35e")); draw_line(rect.position + Vector2(10, 10), rect.end - Vector2(10, 10), Color("#0b102b"), 4.0)
 		"bounce_pad": draw_rect(rect, Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, rect.position + Vector2(8, 21), "↑", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#0b102b"))
 		"moving_platform": draw_rect(rect, Color("#8fa8df"))

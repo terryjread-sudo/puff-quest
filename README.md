@@ -13,6 +13,8 @@ Neon Twice is a fresh Godot 4 rhythm runner. The cube auto-runs through a neon o
 
 The current game contains no imported code, scenes, assets, or tests from the previous project. Visuals are drawn procedurally. The level is a versioned JSON-shaped data model containing blocks, spikes, catapults, timetable quiz triggers, bounce pads, moving platforms, gravity portals, laser gates, speed rings, stars, and checkpoints.
 
+Laser gates are beat hazards: they switch between ON and OFF on a repeating beat schedule. Pass while the laser is OFF, or dash through it while it is ON.
+
 ## Run
 
 Open this folder in Godot 4.x and run `main.tscn`. The Web export can be configured from the fresh `project.godot` file.
