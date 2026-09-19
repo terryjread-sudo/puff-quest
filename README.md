@@ -33,6 +33,8 @@ Open this folder in Godot 4.x and run `main.tscn`. The Web export can be configu
 - Level 1 uses a local transparent sprite sheet of the supplied detailed running-skeleton reference, with twelve beat-synchronised poses for the giant leader and slam pose.
 - Catapult launches now accelerate the cube forward over their beat duration instead of teleporting it.
 - Stars award diamonds, correct times-table answers award bonus diamonds, and the title-screen shop persists owned/equipped cube skins in browser local storage.
+- Each skin also changes the cube's trail, dash flare, landing burst, and shield colour; Prism Pulse adds animated orbiting accents.
+- Level completion now gives a clear reward breakdown: diamonds earned, perfect beats, on-beat accuracy, missed opportunities, quizzes solved, best combo, and dashes.
 - Quiz recovery explicitly restores the music playback position and restarts the stream if the browser audio element unexpectedly stops.
 - All runtime values live in `main.gd` until the game grows into a multi-level data resource.
 

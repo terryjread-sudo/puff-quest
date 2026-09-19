@@ -18,11 +18,11 @@ const SLAM_INTERVAL_BEATS := 8.0
 const AUDIO_RESYNC_SECONDS := 0.28
 const SHOP_BUTTON_SIZE := Vector2(190.0, 54.0)
 const SKINS := [
-	{"id": "classic", "name": "CLASSIC CYAN", "cost": 0, "body": "#75f1ff", "core": "#f5e27e", "animated": false},
-	{"id": "bubblegum", "name": "BUBBLEGUM PINK", "cost": 25, "body": "#ff9dbc", "core": "#fff1a8", "animated": false},
-	{"id": "lime", "name": "LIME POP", "cost": 60, "body": "#55d68a", "core": "#f5e27e", "animated": false},
-	{"id": "violet", "name": "VIOLET COMET", "cost": 120, "body": "#b06cff", "core": "#a8ffd0", "animated": false},
-	{"id": "prism", "name": "PRISM PULSE", "cost": 220, "body": "#7cf5ff", "core": "#ffffff", "animated": true}
+	{"id": "classic", "name": "CLASSIC CYAN", "cost": 0, "body": "#75f1ff", "core": "#f5e27e", "trail": "#7cf5ff", "shield": "#a8ffd0", "style": "spark", "animated": false},
+	{"id": "bubblegum", "name": "BUBBLEGUM PINK", "cost": 25, "body": "#ff9dbc", "core": "#fff1a8", "trail": "#ff9dbc", "shield": "#ffd0e5", "style": "heart", "animated": false},
+	{"id": "lime", "name": "LIME POP", "cost": 60, "body": "#55d68a", "core": "#f5e27e", "trail": "#a8ffd0", "shield": "#55d68a", "style": "leaf", "animated": false},
+	{"id": "violet", "name": "VIOLET COMET", "cost": 120, "body": "#b06cff", "core": "#a8ffd0", "trail": "#d7b5ff", "shield": "#b06cff", "style": "comet", "animated": false},
+	{"id": "prism", "name": "PRISM PULSE", "cost": 220, "body": "#7cf5ff", "core": "#ffffff", "trail": "#ffffff", "shield": "#ffffff", "style": "prism", "animated": true}
 ]
 
 var level: Dictionary = {}
@@ -72,9 +72,18 @@ var invulnerability := 0.0
 var combo := 0
 var best_combo := 0
 var score := 0
+var run_diamonds_earned := 0
+var run_stars_collected := 0
+var run_perfect_jumps := 0
+var run_good_jumps := 0
+var run_jump_attempts := 0
+var run_hits := 0
+var run_dashes := 0
+var run_best_combo := 0
 var checkpoint_beats: Array = [0.0]
 var checkpoint_index := 0
 var particles: Array = []
+var trail_particles: Array = []
 var flash := 0.0
 var message := ""
 var message_time := 0.0
@@ -217,6 +226,7 @@ func _process(delta: float) -> void:
 		if slam_offset >= 0.0:
 			slam_offset = 0.0; slam_velocity = 0.0
 	_update_particles(dt)
+	_update_player_trail()
 	if music_player != null: music_player.pitch_scale = 0.26 if quiz_active else _pace_multiplier()
 	_maintain_music()
 	if audio_resync_time > 0.0:
@@ -273,6 +283,7 @@ func _run_step(delta: float) -> void:
 		if velocity.y >= 0.0 and Rect2(player, PLAYER_SIZE).intersects(platform_rect) and player.y + PLAYER_SIZE.y - platform_rect.position.y < 24.0:
 			player.y = platform_rect.position.y - PLAYER_SIZE.y
 			velocity.y = 0.0
+	if not grounded and _is_grounded(): _spawn_skin_burst(player + PLAYER_SIZE * 0.5, 7)
 	if player.y > VIEW.y + 160.0 or player.y < -180.0:
 		_crash("MISSED THE PLATFORM")
 		return
@@ -378,8 +389,11 @@ func _start_run() -> void:
 	if not started:
 		if selected_level_index != level_index:
 			_apply_level(LevelData.campaign_level(selected_level_index)); player = Vector2(START_X, FLOOR_Y - PLAYER_SIZE.y); velocity = Vector2.ZERO; camera_x = 0.0; run_time = 0.0; checkpoint_index = 0
-		shield_hits = 3; invulnerability = 0.0; score = 0; combo = 0; quiz_points = 0; quiz_streak = 0; intro_time_left = INTRO_CLEAR_SECONDS
+		shield_hits = 3; invulnerability = 0.0; score = 0; combo = 0; quiz_points = 0; quiz_streak = 0; _reset_run_stats(); intro_time_left = INTRO_CLEAR_SECONDS
 	started = true; paused = false; _ensure_music(); message = "%s • FIND THE BEAT" % str(level["display_name"]); message_time = 1.5
+
+func _reset_run_stats() -> void:
+	run_diamonds_earned = 0; run_stars_collected = 0; run_perfect_jumps = 0; run_good_jumps = 0; run_jump_attempts = 0; run_hits = 0; run_dashes = 0; run_best_combo = 0; trail_particles.clear()
 
 func _level_choice_rect(index: int) -> Rect2:
 	return Rect2(70.0 + index * 395.0, 150.0, 360.0, 360.0)
@@ -476,7 +490,7 @@ func _shop_click(pos: Vector2) -> void:
 		return
 
 func _restart_run() -> void:
-	_apply_level(level); player = Vector2(START_X, FLOOR_Y - PLAYER_SIZE.y); velocity = Vector2.ZERO; camera_x = 0.0; run_time = 0.0; checkpoint_index = 0; combo = 0; score = 0; quiz_points = 0; quiz_streak = 0; shield_hits = 3; invulnerability = 0.0; crash_timer = 0.0; checkpoint_flash = 0.0; finished = false; quiz_active = false; quiz_feedback_time = 0.0; quiz_snapshot.clear(); build_mode = false; paused = false; speed_until = 0.0; catapult_boost_left = 0.0; runtime_objects.clear(); intro_time_left = INTRO_CLEAR_SECONDS; slam_next_beat = -1.0; slam_offset = 0.0; slam_velocity = 0.0; slam_timer = 0.0; _resume_music(); _start_run()
+	_apply_level(level); player = Vector2(START_X, FLOOR_Y - PLAYER_SIZE.y); velocity = Vector2.ZERO; camera_x = 0.0; run_time = 0.0; checkpoint_index = 0; combo = 0; score = 0; quiz_points = 0; quiz_streak = 0; shield_hits = 3; invulnerability = 0.0; crash_timer = 0.0; checkpoint_flash = 0.0; finished = false; quiz_active = false; quiz_feedback_time = 0.0; quiz_snapshot.clear(); build_mode = false; paused = false; speed_until = 0.0; catapult_boost_left = 0.0; runtime_objects.clear(); _reset_run_stats(); intro_time_left = INTRO_CLEAR_SECONDS; slam_next_beat = -1.0; slam_offset = 0.0; slam_velocity = 0.0; slam_timer = 0.0; _resume_music(); _start_run()
 
 func _toggle_builder() -> void:
 	build_mode = not build_mode; paused = build_mode
@@ -683,7 +697,7 @@ func _check_objects() -> void:
 				else: _take_hit("HIT THE BEAT WALL")
 			"bounce_pad": velocity.y = JUMP_VELOCITY * float(object["properties"].get("strength", 1.0)); consumed[id] = true; _combo_event("BOUNCE")
 			"speed_ring": score += 75; consumed[id] = true; speed_until = run_time + float(object["properties"].get("duration_beats", 4.0)) * _music_beat(); _combo_event("SPEED UP"); _spawn_burst(rect.position + rect.size * 0.5, Color("#f5e27e"), 10)
-			"star": score += 75; diamonds += 1; consumed[id] = true; _combo_event("COLLECT"); _spawn_burst(rect.position + rect.size * 0.5, Color("#f5e27e"), 10); _save_progress()
+			"star": score += 75; diamonds += 1; run_diamonds_earned += 1; run_stars_collected += 1; consumed[id] = true; _combo_event("COLLECT"); _spawn_burst(rect.position + rect.size * 0.5, Color("#f5e27e"), 10); _save_progress()
 			"checkpoint": checkpoint_index = max(checkpoint_index, checkpoint_beats.find(float(object["beat"])))
 
 func _check_triggers() -> void:
@@ -704,7 +718,7 @@ func _answer_quiz(choice: int) -> void:
 		_restore_quiz_snapshot()
 		quiz_points += 1; quiz_streak += 1
 		var reward: int = 250 + max(0, quiz_streak - 1) * 100
-		diamonds += 10 + max(0, quiz_streak - 1); score += reward; invulnerability = max(invulnerability, 2.0); _combo_event("SOLVED"); message = "CORRECT +%d • DIAMONDS +%d" % [reward, 10 + max(0, quiz_streak - 1)]; _save_progress()
+		diamonds += 10 + max(0, quiz_streak - 1); run_diamonds_earned += 10 + max(0, quiz_streak - 1); score += reward; invulnerability = max(invulnerability, 2.0); _combo_event("SOLVED"); message = "CORRECT +%d • DIAMONDS +%d" % [reward, 10 + max(0, quiz_streak - 1)]; _save_progress()
 	else:
 		_restore_quiz_snapshot()
 		quiz_feedback_answer = correct_answer; quiz_feedback_reason = "TIME UP" if choice < 0 else "WRONG TIMES TABLE"; quiz_feedback_text = "%d × %d = %d • CORRECT ANSWER: %d" % [quiz_table, quiz_number, correct_answer, correct_answer]; quiz_feedback_time = 2.0; combo = 0; quiz_streak = 0; flash = 0.25
@@ -725,10 +739,11 @@ func _resolve_quiz_feedback() -> void:
 
 func _start_dash() -> void:
 	if dash_cooldown > 0.0 or dash_left > 0.0: return
-	dash_left = DASH_TIME; dash_cooldown = _music_beat() * 2.0; velocity = Vector2(DASH_SPEED, 0.0); _combo_event("DASH")
+	dash_left = DASH_TIME; dash_cooldown = _music_beat() * 2.0; velocity = Vector2(DASH_SPEED, 0.0); run_dashes += 1; _spawn_skin_burst(player + PLAYER_SIZE * 0.5, 8); _combo_event("DASH")
 
 func _take_hit(reason: String) -> void:
 	if invulnerability > 0.0: return
+	run_hits += 1
 	if shield_hits > 0:
 		shield_hits -= 1; invulnerability = 0.8; velocity.y = -260.0; flash = 0.22; message = "%s • SHIELD %d/3" % [reason, shield_hits]; message_time = 1.2
 	else: _crash(reason)
@@ -753,6 +768,10 @@ func _finish() -> void:
 	_save_progress()
 	message = "LEVEL COMPLETE"; message_time = 99.0
 
+func _run_accuracy_percent() -> int:
+	if run_jump_attempts <= 0: return 100
+	return int(round(float(run_perfect_jumps + run_good_jumps) / float(run_jump_attempts) * 100.0))
+
 func _is_grounded() -> bool:
 	if gravity_sign < 0.0: return false
 	if player.y + PLAYER_SIZE.y >= FLOOR_Y - 1.0: return true
@@ -763,13 +782,16 @@ func _is_grounded() -> bool:
 	return false
 
 func _jump_beat_event() -> void:
+	run_jump_attempts += 1
 	var beat: float = _music_beat()
 	var error: float = _beat_distance()
 	if error <= beat * 0.10:
+		run_perfect_jumps += 1; _spawn_skin_burst(player + PLAYER_SIZE * 0.5, 8)
 		_combo_event("PERFECT JUMP")
 		score += 150
 		message = "PERFECT JUMP +150"
 	elif error <= beat * 0.24:
+		run_good_jumps += 1; _spawn_skin_burst(player + PLAYER_SIZE * 0.5, 5)
 		_combo_event("GOOD JUMP")
 		score += 60
 		message = "GOOD JUMP +60"
@@ -777,7 +799,7 @@ func _jump_beat_event() -> void:
 		_combo_event("JUMP")
 
 func _combo_event(label: String) -> void:
-	combo += 1; best_combo = max(best_combo, combo); score += 20 + combo * 2; message = "GOOD " + label; message_time = 0.55
+	combo += 1; best_combo = max(best_combo, combo); run_best_combo = max(run_best_combo, combo); score += 20 + combo * 2; message = "GOOD " + label; message_time = 0.55
 func _object_x(object: Dictionary) -> float: return START_X + float(object["beat"]) * _beat_width()
 func _object_y(object: Dictionary) -> float:
 	var base := FLOOR_Y - float(object["lane"]) * LANE_HEIGHT
@@ -812,8 +834,36 @@ func _update_particles(delta: float) -> void:
 	for i in range(particles.size() - 1, -1, -1):
 		particles[i]["p"] += particles[i]["v"] * delta; particles[i]["v"] *= 0.94; particles[i]["life"] -= delta
 		if particles[i]["life"] <= 0.0: particles.remove_at(i)
+	for i in range(trail_particles.size() - 1, -1, -1):
+		trail_particles[i]["p"] += trail_particles[i]["v"] * delta; trail_particles[i]["v"] *= 0.90; trail_particles[i]["life"] -= delta
+		if trail_particles[i]["life"] <= 0.0: trail_particles.remove_at(i)
 func _spawn_burst(origin: Vector2, color: Color, count: int) -> void:
-	for i in count: particles.append({"p": origin, "v": Vector2.from_angle(rng.randf_range(0.0, TAU)) * rng.randf_range(40.0, 220.0), "life": rng.randf_range(0.25, 0.7), "color": color})
+	for i in count: particles.append({"p": origin, "v": Vector2.from_angle(rng.randf_range(0.0, TAU)) * rng.randf_range(40.0, 220.0), "life": rng.randf_range(0.25, 0.7), "color": color, "style": "dot"})
+
+func _spawn_skin_burst(origin: Vector2, count: int) -> void:
+	var skin := _current_skin()
+	var style := str(skin.get("style", "spark"))
+	var color := Color(str(skin.get("trail", "#7cf5ff")))
+	if bool(skin.get("animated", false)): color = Color.from_hsv(fmod(background_time * 0.12, 1.0), 0.58, 1.0)
+	for i in count:
+		particles.append({"p": origin, "v": Vector2.from_angle(rng.randf_range(0.0, TAU)) * rng.randf_range(45.0, 175.0), "life": rng.randf_range(0.32, 0.72), "color": color, "style": style})
+
+func _update_player_trail() -> void:
+	if not started or finished or build_mode or quiz_active or intro_time_left > 0.0: return
+	var skin := _current_skin()
+	var color := Color(str(skin.get("trail", "#7cf5ff")))
+	if bool(skin.get("animated", false)): color = Color.from_hsv(fmod(background_time * 0.12, 1.0), 0.58, 1.0)
+	var life := 0.42 if dash_left > 0.0 else 0.24
+	var size := 9.0 if dash_left > 0.0 else 5.0
+	trail_particles.append({"p": player + PLAYER_SIZE * 0.5 - Vector2(15.0, 0.0), "v": Vector2(-35.0 if dash_left > 0.0 else -12.0, 0.0), "life": life, "max_life": life, "size": size, "color": color, "style": str(skin.get("style", "spark"))})
+func _draw_effect_particle(particle: Dictionary, screen_position: Vector2) -> void:
+	var life: float = float(particle.get("life", 0.0)); var alpha: float = clamp(life / float(particle.get("max_life", 0.7)), 0.0, 1.0); var color := Color(particle["color"], alpha); var size: float = float(particle.get("size", 4.0)) * (0.45 + alpha * 0.55); var style := str(particle.get("style", "dot"))
+	if style == "heart":
+		draw_circle(screen_position + Vector2(-size * 0.35, -size * 0.2), size * 0.42, color); draw_circle(screen_position + Vector2(size * 0.35, -size * 0.2), size * 0.42, color); draw_colored_polygon(PackedVector2Array([screen_position + Vector2(-size * 0.75, 0), screen_position + Vector2(size * 0.75, 0), screen_position + Vector2(0, size)]), color)
+	elif style == "leaf" or style == "comet":
+		draw_colored_polygon(PackedVector2Array([screen_position + Vector2(0, -size), screen_position + Vector2(size * 0.55, 0), screen_position + Vector2(0, size), screen_position + Vector2(-size * 0.55, 0)]), color)
+	else:
+		draw_circle(screen_position, size, color)
 
 func _draw() -> void:
 	_draw_background(); _draw_world(); _draw_hud()
@@ -999,10 +1049,13 @@ func _draw_world() -> void:
 	if started and not build_mode and not quiz_active and not finished and not _is_grounded(): _draw_landing_trace()
 	for object in objects + runtime_objects:
 		if not consumed.has(object["id"]) and intro_time_left <= 0.0: _draw_object(object)
-	for particle in particles: draw_circle(particle["p"] - Vector2(camera_x, 0), 3.0 + particle["life"] * 4.0, Color(particle["color"], particle["life"]))
+	for trail in trail_particles: _draw_effect_particle(trail, trail["p"] - Vector2(camera_x, 0))
+	for particle in particles: _draw_effect_particle(particle, particle["p"] - Vector2(camera_x, 0))
 	var center := player - Vector2(camera_x, 0) + PLAYER_SIZE * 0.5
 	_draw_player(center)
-	if shield_hits > 0 or invulnerability > 0.0: draw_arc(center, 38.0 + sin(background_time * 8.0) * 3.0, 0.0, TAU, 32, Color("#a8ffd0") if shield_hits > 0 else Color("#ffffff"), 4.0)
+	if shield_hits > 0 or invulnerability > 0.0:
+		var shield_color := Color(str(_current_skin().get("shield", "#a8ffd0"))) if shield_hits > 0 else Color("#ffffff")
+		draw_arc(center, 38.0 + sin(background_time * 8.0) * 3.0, 0.0, TAU, 32, shield_color, 4.0)
 	if crash_timer > 0.0:
 		draw_circle(player - Vector2(camera_x, 0) + PLAYER_SIZE * 0.5, 42.0 + sin(background_time * 24.0) * 5.0, Color(1.0, 0.25, 0.45, 0.12))
 
@@ -1015,7 +1068,9 @@ func _draw_player(center: Vector2) -> void:
 	var rotation := run_time * 2.0 if dash_left > 0.0 else 0.0
 	var squash := 1.0 + sin(background_time * 16.0) * 0.035 if _is_grounded() else 1.0
 	draw_set_transform(center, rotation, Vector2(squash, 2.0 - squash))
-	if dash_left > 0.0: draw_line(Vector2(-42, 0), Vector2(-24, 0), Color(body, 0.55), 8.0)
+	if dash_left > 0.0:
+		draw_line(Vector2(-42, 0), Vector2(-24, 0), Color(body, 0.55), 8.0)
+		draw_arc(Vector2.ZERO, 31.0 + sin(background_time * 28.0) * 3.0, -0.8, 0.8, 16, Color(str(skin.get("trail", "#7cf5ff"))), 4.0)
 	draw_rect(Rect2(-23, -23, 46, 46), body)
 	draw_rect(Rect2(-16, -16, 32, 32), Color("#182450"))
 	draw_rect(Rect2(-8, -8, 16, 16), core)
@@ -1170,4 +1225,20 @@ func _draw_builder() -> void:
 	draw_string(ThemeDB.fallback_font, Vector2(330, 92), "Beat grid: click to place • Enter tests from start", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#ffffff"))
 
 func _draw_finish() -> void:
-	draw_rect(Rect2(Vector2.ZERO, VIEW), Color(0.02, 0.03, 0.10, 0.84)); draw_string(ThemeDB.fallback_font, Vector2(0, 220), "LEVEL COMPLETE", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 54, Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, Vector2(0, 295), "%s" % str(level["display_name"]), HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 24, Color("#a8ffd0")); draw_string(ThemeDB.fallback_font, Vector2(0, 350), "SCORE %06d" % score, HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 28, Color("#f5e27e")); draw_string(ThemeDB.fallback_font, Vector2(0, 395), "BEST COMBO x%d    QUIZZES %d" % [best_combo, quiz_points], HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 20, Color("#ffffff")); draw_string(ThemeDB.fallback_font, Vector2(0, 470), "PRESS SPACE TO PLAY AGAIN  •  ESC TO LEVELS", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 18, Color("#a9b8ef"))
+	draw_rect(Rect2(Vector2.ZERO, VIEW), Color(0.02, 0.03, 0.10, 0.90))
+	draw_string(ThemeDB.fallback_font, Vector2(0, 150), "LEVEL COMPLETE", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 54, Color("#7cf5ff"))
+	draw_string(ThemeDB.fallback_font, Vector2(0, 198), "%s" % str(level["display_name"]), HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 24, Color("#a8ffd0"))
+	draw_string(ThemeDB.fallback_font, Vector2(0, 246), "SCORE %06d" % score, HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 28, Color("#f5e27e"))
+	_draw_finish_stat(Rect2(80, 285, 250, 112), "DIAMONDS EARNED", "+%d" % run_diamonds_earned, Color("#f5e27e"))
+	_draw_finish_stat(Rect2(365, 285, 250, 112), "PERFECT BEATS", "%d" % run_perfect_jumps, Color("#7cf5ff"))
+	_draw_finish_stat(Rect2(650, 285, 250, 112), "ON-BEAT ACCURACY", "%d%%" % _run_accuracy_percent(), Color("#a8ffd0"))
+	_draw_finish_stat(Rect2(935, 285, 250, 112), "MISSED OPPORTUNITIES", "%d" % max(0, run_jump_attempts - run_perfect_jumps - run_good_jumps + run_hits), Color("#ff9dbc"))
+	_draw_finish_stat(Rect2(220, 425, 250, 92), "QUIZZES SOLVED", "%d" % quiz_points, Color("#b06cff"))
+	_draw_finish_stat(Rect2(515, 425, 250, 92), "BEST COMBO", "x%d" % run_best_combo, Color("#ffffff"))
+	_draw_finish_stat(Rect2(810, 425, 250, 92), "DASHES", "%d" % run_dashes, Color("#d7b5ff"))
+	draw_string(ThemeDB.fallback_font, Vector2(0, 600), "PRESS SPACE TO PLAY AGAIN  •  ESC TO LEVELS", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 18, Color("#a9b8ef"))
+
+func _draw_finish_stat(rect: Rect2, label: String, value: String, color: Color) -> void:
+	draw_rect(rect, Color("#182450")); draw_rect(rect, Color(color, 0.55), false, 3.0)
+	draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, 34), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 14, Color("#cbbaff"))
+	draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, 83), value, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 30, color)
