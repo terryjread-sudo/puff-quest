@@ -44,6 +44,8 @@ var quiz_choices: Array[int] = []
 var quiz_correct_index := 0
 var quiz_points := 0
 var quiz_streak := 0
+var shield_hits := 3
+var invulnerability := 0.0
 var combo := 0
 var best_combo := 0
 var score := 0
@@ -60,6 +62,7 @@ var music_started := false
 var gravity_sign := 1.0
 var gravity_until := 0.0
 var catapult_state: Dictionary = {}
+var catapult_boost_left := 0.0
 var speed_until := 0.0
 var music_index := 0
 var undo_stack: Array = []
@@ -125,6 +128,7 @@ func _process(delta: float) -> void:
 	var dt: float = min(delta, 0.05)
 	background_time += dt
 	message_time = max(0.0, message_time - dt); flash = max(0.0, flash - dt)
+	invulnerability = max(0.0, invulnerability - dt)
 	_update_particles(dt)
 	if music_player != null: music_player.pitch_scale = 0.26 if quiz_active else 1.0
 	if not started or finished or paused or build_mode:
@@ -143,7 +147,8 @@ func _run_step(delta: float) -> void:
 	if dash_left > 0.0:
 		dash_left -= delta; velocity = Vector2(DASH_SPEED, 0.0)
 	else:
-		velocity.x = RUN_SPEED * _speed_multiplier(); velocity.y += GRAVITY * gravity_sign * delta
+		catapult_boost_left = max(0.0, catapult_boost_left - delta)
+		velocity.x = DASH_SPEED if catapult_boost_left > 0.0 else RUN_SPEED * _speed_multiplier(); velocity.y += GRAVITY * gravity_sign * delta
 		if jump_buffer > 0.0 and (grounded or coyote > 0.0):
 			velocity.y = JUMP_VELOCITY * gravity_sign; jump_buffer = 0.0; coyote = 0.0; _combo_event("JUMP")
 	player += velocity * delta
@@ -223,10 +228,11 @@ func _input(event: InputEvent) -> void:
 			else: _start_dash()
 
 func _start_run() -> void:
+	if not started: shield_hits = 3; invulnerability = 0.0
 	started = true; paused = false; _ensure_music(); message = "FIND THE BEAT"; message_time = 1.5
 
 func _restart_run() -> void:
-	_apply_level(level); player = Vector2(START_X, FLOOR_Y - PLAYER_SIZE.y); velocity = Vector2.ZERO; camera_x = 0.0; run_time = 0.0; checkpoint_index = 0; combo = 0; score = 0; quiz_points = 0; quiz_streak = 0; finished = false; quiz_active = false; build_mode = false; paused = false; speed_until = 0.0; if music_player != null: music_player.stream_paused = false; _start_run()
+	_apply_level(level); player = Vector2(START_X, FLOOR_Y - PLAYER_SIZE.y); velocity = Vector2.ZERO; camera_x = 0.0; run_time = 0.0; checkpoint_index = 0; combo = 0; score = 0; quiz_points = 0; quiz_streak = 0; shield_hits = 3; invulnerability = 0.0; finished = false; quiz_active = false; build_mode = false; paused = false; speed_until = 0.0; catapult_boost_left = 0.0; if music_player != null: music_player.stream_paused = false; _start_run()
 
 func _toggle_builder() -> void:
 	build_mode = not build_mode; paused = build_mode
@@ -396,7 +402,7 @@ func _update_objects() -> void:
 		var id: String = object["id"]; var kind: String = object["type"]; var x := _object_x(object)
 		if consumed.has(id): continue
 		if kind == "catapult" and player.x >= x and not catapult_state.has(id): catapult_state[id] = run_time + float(object["properties"].get("delay_beats", 1.0)) * _music_beat()
-		if kind == "catapult" and catapult_state.has(id) and run_time >= catapult_state[id]: player.x += RUN_SPEED * _music_beat() * float(object["properties"].get("launch_beats", 2.0)); velocity.y = -180.0; consumed[id] = true; message = "CATAPULT LAUNCH"; message_time = 0.8
+		if kind == "catapult" and catapult_state.has(id) and run_time >= catapult_state[id]: catapult_boost_left = float(object["properties"].get("launch_beats", 2.0)) * _music_beat(); velocity.y = -180.0; consumed[id] = true; message = "CATAPULT LAUNCH"; message_time = 0.8
 		if kind == "gravity_portal" and player.x >= x:
 			gravity_sign = -1.0; gravity_until = run_time + float(object["properties"].get("duration_beats", 8.0)) * _music_beat(); consumed[id] = true
 
@@ -409,12 +415,13 @@ func _check_objects() -> void:
 	for object in objects:
 		var id: String = object["id"]; var kind: String = object["type"]
 		if consumed.has(id): continue
+		if invulnerability > 0.0 and (kind == "spike" or kind == "block"): continue
 		var rect := _object_rect(object)
 		if not body.intersects(rect): continue
 		match kind:
 			"spike", "block":
 				if dash_left > 0.0: score += 40; consumed[id] = true; _spawn_burst(rect.position + rect.size * 0.5, Color("#ff698f"), 14)
-				else: _crash("HIT THE BEAT WALL")
+				else: _take_hit("HIT THE BEAT WALL")
 			"bounce_pad": velocity.y = JUMP_VELOCITY * float(object["properties"].get("strength", 1.0)); consumed[id] = true; _combo_event("BOUNCE")
 			"speed_ring": score += 75; consumed[id] = true; speed_until = run_time + float(object["properties"].get("duration_beats", 4.0)) * _music_beat(); _combo_event("SPEED UP"); _spawn_burst(rect.position + rect.size * 0.5, Color("#f5e27e"), 10)
 			"star": score += 75; consumed[id] = true; _combo_event("COLLECT"); _spawn_burst(rect.position + rect.size * 0.5, Color("#f5e27e"), 10)
@@ -435,17 +442,23 @@ func _answer_quiz(choice: int) -> void:
 	if choice == quiz_correct_index:
 		quiz_points += 1; quiz_streak += 1
 		var reward: int = 250 + max(0, quiz_streak - 1) * 100
-		score += reward; _combo_event("SOLVED"); message = "CORRECT +%d • QUIZ STREAK x%d" % [reward, quiz_streak]
+		score += reward; invulnerability = max(invulnerability, 2.0); _combo_event("SOLVED"); message = "CORRECT +%d • SHIELD 2 SEC" % reward
 	else:
-		combo = 0; quiz_streak = 0; message = "WRONG - QUIZ STREAK LOST"
+		combo = 0; quiz_streak = 0; _take_hit("WRONG TIMES TABLE")
 	message_time = 1.5; flash = 0.25
 
 func _start_dash() -> void:
 	if dash_cooldown > 0.0 or dash_left > 0.0: return
 	dash_left = DASH_TIME; dash_cooldown = _music_beat() * 2.0; velocity = Vector2(DASH_SPEED, 0.0); _combo_event("DASH")
 
+func _take_hit(reason: String) -> void:
+	if invulnerability > 0.0: return
+	if shield_hits > 0:
+		shield_hits -= 1; invulnerability = 0.8; velocity.y = -260.0; flash = 0.22; message = "%s • SHIELD %d/3" % [reason, shield_hits]; message_time = 1.2
+	else: _crash(reason)
+
 func _crash(reason: String) -> void:
-	combo = 0; quiz_streak = 0; flash = 0.35; message = "%s • RESPAWN CHECKPOINT %d" % [reason, checkpoint_index]; message_time = 1.4; player = Vector2(START_X + checkpoint_beats[checkpoint_index] * _beat_width(), FLOOR_Y - PLAYER_SIZE.y); velocity = Vector2.ZERO; dash_left = 0.0; dash_cooldown = 0.0; gravity_sign = 1.0; gravity_until = 0.0; speed_until = 0.0; quiz_active = false; consumed.clear(); triggered.clear(); catapult_state.clear()
+	combo = 0; quiz_streak = 0; flash = 0.35; message = "%s • RESPAWN CHECKPOINT %d" % [reason, checkpoint_index]; message_time = 1.4; player = Vector2(START_X + checkpoint_beats[checkpoint_index] * _beat_width(), FLOOR_Y - PLAYER_SIZE.y); velocity = Vector2.ZERO; dash_left = 0.0; dash_cooldown = 0.0; gravity_sign = 1.0; gravity_until = 0.0; speed_until = 0.0; catapult_boost_left = 0.0; quiz_active = false; consumed.clear(); triggered.clear(); catapult_state.clear()
 	for trigger in triggers:
 		if float(trigger["beat"]) < checkpoint_beats[checkpoint_index]: triggered[trigger["id"]] = true
 
@@ -515,6 +528,7 @@ func _draw_background() -> void:
 		var sx := fmod(x - camera_x * 0.15, 1500.0); draw_line(Vector2(sx, 0), Vector2(sx - 260, VIEW.y), Color(0.7, 0.45, 0.95, 0.11), 1.0)
 	for y in range(80, int(fill_size.y) + 80, 80): draw_line(Vector2(0, y), Vector2(fill_size.x, y), Color(0.7, 0.45, 0.95, 0.10), 1.0)
 	_draw_beat_layers(fill_size, pulse)
+	_draw_background_details(fill_size, pulse)
 	_draw_kawaii_bone_carnival(pulse)
 
 func _draw_beat_layers(fill_size: Vector2, pulse: float) -> void:
@@ -528,6 +542,26 @@ func _draw_beat_layers(fill_size: Vector2, pulse: float) -> void:
 		var halo_x := fmod(140.0 + i * 290.0 - camera_x * 0.14, 1540.0) - 120.0
 		var halo_y := 220.0 + (i % 3) * 105.0
 		draw_arc(Vector2(halo_x, halo_y), 30.0 + beat_bloom * 18.0, 0.0, TAU, 24, Color(0.95, 0.55, 0.88, 0.08 + pulse * 0.05), 4.0)
+
+func _draw_background_details(fill_size: Vector2, pulse: float) -> void:
+	# Small decorative scenery fills the negative space without obscuring hazards.
+	for i in range(12):
+		var star_x := fmod(55.0 + i * 137.0 - camera_x * 0.06, fill_size.x + 180.0) - 90.0
+		var star_y := 105.0 + fmod(i * 61.0 + background_time * (8.0 + i % 3), max(120.0, fill_size.y - 250.0))
+		var star_size := 2.0 + float(i % 3) + pulse * 2.0
+		_draw_sparkle(Vector2(star_x, star_y), star_size, Color(1.0, 0.86, 0.55, 0.42))
+	for i in range(7):
+		var tower_x := fmod(i * 210.0 - camera_x * 0.11, 1600.0) - 80.0
+		var tower_h := 38.0 + float((i * 17) % 45)
+		draw_rect(Rect2(tower_x, FLOOR_Y - tower_h, 92.0, tower_h), Color(0.12, 0.10, 0.30, 0.48))
+		for window in range(3):
+			var window_color := Color("#7cf5ff") if (window + i) % 2 == 0 else Color("#ff9dbc")
+			draw_rect(Rect2(tower_x + 16.0 + window * 23.0, FLOOR_Y - tower_h + 15.0, 9.0, 12.0), Color(window_color, 0.34 + pulse * 0.18))
+	for i in range(5):
+		var candy_x := fmod(210.0 + i * 285.0 + sin(background_time * 0.5 + i) * 24.0 - camera_x * 0.18, 1500.0) - 100.0
+		var candy_y := 470.0 + sin(background_time * 1.4 + i * 1.5) * 12.0
+		draw_circle(Vector2(candy_x, candy_y), 15.0 + pulse * 3.0, Color(0.98, 0.70, 0.86, 0.17))
+		draw_line(Vector2(candy_x - 11.0, candy_y), Vector2(candy_x + 11.0, candy_y), Color(0.70, 0.92, 1.0, 0.22), 4.0)
 
 func _draw_kawaii_bone_carnival(pulse: float) -> void:
 	# Original pastel spooky-cute background set piece: all shapes are drawn in code.
@@ -623,6 +657,7 @@ func _draw_world() -> void:
 		if not consumed.has(object["id"]): _draw_object(object)
 	for particle in particles: draw_circle(particle["p"] - Vector2(camera_x, 0), 3.0 + particle["life"] * 4.0, Color(particle["color"], particle["life"]))
 	var center := player - Vector2(camera_x, 0) + PLAYER_SIZE * 0.5; draw_set_transform(center, run_time * 2.0 if dash_left > 0.0 else 0.0, Vector2.ONE); draw_rect(Rect2(-23, -23, 46, 46), Color("#75f1ff")); draw_rect(Rect2(-16, -16, 32, 32), Color("#182450")); draw_rect(Rect2(-8, -8, 16, 16), Color("#f5e27e")); draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	if shield_hits > 0 or invulnerability > 0.0: draw_arc(center, 38.0 + sin(background_time * 8.0) * 3.0, 0.0, TAU, 32, Color("#a8ffd0") if shield_hits > 0 else Color("#ffffff"), 4.0)
 
 func _draw_object(object: Dictionary) -> void:
 	var kind: String = object["type"]; var rect := _object_rect(object); rect.position.x -= camera_x; var center := rect.get_center()
@@ -648,7 +683,7 @@ func _draw_object(object: Dictionary) -> void:
 			draw_line(Vector2(center.x, rect.end.y), Vector2(center.x, rect.position.y), Color("#55d68a"), 5.0); draw_colored_polygon(PackedVector2Array([Vector2(center.x + 2, rect.position.y + 4), Vector2(center.x + 30, rect.position.y + 14), Vector2(center.x + 2, rect.position.y + 25)]), Color("#a8ffd0"))
 
 func _draw_hud() -> void:
-	draw_rect(Rect2(24, 20, 420, 80), Color(0.04, 0.06, 0.16, 0.84)); draw_string(ThemeDB.fallback_font, Vector2(44, 52), "NEON TWICE", HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, Vector2(44, 80), "SCORE %06d    COMBO x%d" % [score, combo], HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#f5e27e"))
+	draw_rect(Rect2(24, 20, 520, 80), Color(0.04, 0.06, 0.16, 0.84)); draw_string(ThemeDB.fallback_font, Vector2(44, 52), "NEON TWICE", HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, Vector2(44, 80), "SCORE %06d    COMBO x%d    SHIELD %d/3" % [score, combo, shield_hits], HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#f5e27e"))
 	draw_string(ThemeDB.fallback_font, Vector2(VIEW.x - 300, 46), "%d BPM  •  %s" % [int(level["music"]["bpm"]), "BUILDER" if build_mode else ("SLOWED" if quiz_active else "ON BEAT")], HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color("#cbbaff")); draw_string(ThemeDB.fallback_font, Vector2(VIEW.x - 300, 76), "DISTANCE %04d m" % int(player.x / 10.0), HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#8fa8df"))
 	if quiz_streak > 0: draw_string(ThemeDB.fallback_font, Vector2(470, 52), "QUIZ STREAK x%d" % quiz_streak, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#a8ffd0"))
 	if message_time > 0.0: draw_string(ThemeDB.fallback_font, Vector2(VIEW.x / 2 - 200, 145), message, HORIZONTAL_ALIGNMENT_CENTER, 400, 22, Color("#ffffff"))
