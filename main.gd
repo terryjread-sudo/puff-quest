@@ -779,7 +779,7 @@ func _draw_chaser() -> void:
 	var chaser_offset: float = 250.0 if chase_mode else 350.0
 	var chaser_x: float = clampf(player.x - camera_x - chaser_offset, 150.0, 470.0)
 	var leader_origin: Vector2 = Vector2(chaser_x, 580.0)
-	_draw_marching_skeleton(leader_origin, 1.0, Color("#fff5dd"), 0.0, true)
+	_draw_marching_skeleton(leader_origin, 0.70, Color("#fff5dd"), 0.0, true)
 	for object in runtime_objects:
 		var target_x: float = _object_x(object) - camera_x
 		if target_x > chaser_x and target_x < VIEW.x + 120.0:
@@ -790,10 +790,10 @@ func _draw_marching_skeleton(origin: Vector2, scale: float, tint: Color, phase_o
 	var sprite_frame_count: float = 12.0
 	var sprite_frame_position: float = fmod(background_time / _music_beat() * 6.0 + phase_offset, sprite_frame_count)
 	var sprite_frame_index: int = int(floor(sprite_frame_position))
-	var sprite_cell_size: Vector2 = Vector2(300.0, 396.0)
+	var sprite_cell_size: Vector2 = Vector2(450.0, 594.0)
 	var sprite_column: int = sprite_frame_index % 4
 	var sprite_row: int = int(sprite_frame_index / 4)
-	var sprite_source_rect: Rect2 = Rect2(Vector2(sprite_column * 300.0, sprite_row * 396.0), sprite_cell_size)
+	var sprite_source_rect: Rect2 = Rect2(Vector2(sprite_column * 450.0, sprite_row * 594.0), sprite_cell_size)
 	var sprite_destination_size: Vector2 = sprite_cell_size * scale
 	var sprite_destination: Rect2 = Rect2(origin - Vector2(sprite_destination_size.x * 0.5, sprite_destination_size.y), sprite_destination_size)
 	var sprite_opacity: float = (0.98 if leader else 0.84) * tint.a
@@ -815,19 +815,13 @@ func _draw_kawaii_bone_carnival(pulse: float) -> void:
 		var ghost_x := fmod(120.0 + i * 250.0 + background_time * (18.0 + i * 4.0), 1500.0) - 80.0
 		var ghost_y := 150.0 + i * 32.0 + sin(background_time * 1.2 + i * 1.7) * 24.0
 		_draw_cute_ghost(Vector2(ghost_x, ghost_y), [Color("#b8f4ff"), Color("#e8c8ff"), Color("#ffd0e5")][i % 3], 0.62)
-	# A candy-coloured stream of confetti and marching skeletons gives the
-	# background the manic cartoon energy of a parade, while staying friendly.
+	# A candy-coloured stream of confetti keeps the background lively without
+	# competing with the single detailed skeleton leader.
 	for i in range(7):
 		var confetti_x := fmod(80.0 + i * 205.0 - camera_x * 0.28, 1500.0) - 110.0
 		var confetti_y := 110.0 + fmod(background_time * (24.0 + i * 2.0) + i * 73.0, 310.0)
 		var confetti_color: Color = [Color("#7cf5ff"), Color("#ff9dbc"), Color("#f5e27e"), Color("#b06cff")][i % 4]
 		draw_line(Vector2(confetti_x, confetti_y), Vector2(confetti_x + 9.0, confetti_y + 12.0), Color(confetti_color, 0.65), 4.0)
-	for i in range(5):
-		var parade_x: float = fmod(180.0 + i * 300.0 + background_time * (48.0 + i * 7.0) - camera_x * 0.22, 1680.0) - 140.0
-		var parade_y: float = 570.0 + sin(background_time * 2.0 + i) * 3.0
-		var parade_tint: Color = [Color("#fff5dd"), Color("#ffd8ed"), Color("#d7f8ff")][i % 3]
-		_draw_marching_skeleton(Vector2(parade_x, parade_y), 0.34, parade_tint, float(i) * 0.85, false)
-
 	# Beat sparkles pop across the parade like a cartoon celebration.
 	for i in range(8):
 		var angle: float = background_time * 0.8 + i * TAU / 8.0

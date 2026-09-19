@@ -56,6 +56,7 @@ assert.match(game, /_draw_metro_background/);
 assert.match(game, /_draw_boss_background/);
 assert.match(game, /skeleton-run-spritesheet\.png/);
 assert.match(game, /draw_texture_rect_region/);
+assert.match(game, /Vector2\(450\.0, 594\.0\)/);
 assert.ok(fs.existsSync(new URL('../assets/skeleton-run-spritesheet.png', import.meta.url)));
 assert.match(game, /_start_chase/);
 assert.match(game, /runtime_objects/);
