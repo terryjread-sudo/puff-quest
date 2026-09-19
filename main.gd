@@ -364,15 +364,18 @@ func _draw() -> void:
 	if quiz_active: _draw_quiz()
 	if build_mode: _draw_builder()
 	if finished: _draw_finish()
-	if flash > 0.0: draw_rect(Rect2(Vector2.ZERO, VIEW), Color(1.0, 0.35, 0.5, flash * 0.35))
+	if flash > 0.0: draw_rect(Rect2(Vector2.ZERO, get_viewport_rect().size), Color(1.0, 0.35, 0.5, flash * 0.35))
 
 func _draw_background() -> void:
 	var pulse := 0.5 + 0.5 * sin(background_time * TAU / _music_beat())
-	draw_rect(Rect2(Vector2.ZERO, VIEW), Color("#17143e"))
-	for band in range(9): draw_rect(Rect2(0, band * 80, VIEW.x, 82), Color("#21194e").lerp(Color("#583070"), float(band) / 9.0))
-	for x in range(-100, 1500, 100):
+	var screen_size := get_viewport_rect().size
+	var fill_size := Vector2(max(screen_size.x, VIEW.x), max(screen_size.y, VIEW.y))
+	draw_rect(Rect2(Vector2.ZERO, fill_size), Color("#17143e"))
+	var band_count := int(ceil(fill_size.y / 80.0))
+	for band in range(band_count): draw_rect(Rect2(0, band * 80, fill_size.x, 82), Color("#21194e").lerp(Color("#583070"), min(1.0, float(band) / 9.0)))
+	for x in range(-100, int(fill_size.x) + 1500, 100):
 		var sx := fmod(x - camera_x * 0.15, 1500.0); draw_line(Vector2(sx, 0), Vector2(sx - 260, VIEW.y), Color(0.7, 0.45, 0.95, 0.11), 1.0)
-	for y in range(80, 600, 80): draw_line(Vector2(0, y), Vector2(VIEW.x, y), Color(0.7, 0.45, 0.95, 0.10), 1.0)
+	for y in range(80, int(fill_size.y) + 80, 80): draw_line(Vector2(0, y), Vector2(fill_size.x, y), Color(0.7, 0.45, 0.95, 0.10), 1.0)
 	_draw_kawaii_bone_carnival(pulse)
 
 func _draw_kawaii_bone_carnival(pulse: float) -> void:
@@ -459,9 +462,12 @@ func _draw_sparkle(pos: Vector2, size: float, color: Color) -> void:
 	draw_colored_polygon(PackedVector2Array([pos + Vector2(0, -size), pos + Vector2(size * 0.35, -size * 0.35), pos + Vector2(size, 0), pos + Vector2(size * 0.35, size * 0.35), pos + Vector2(0, size), pos + Vector2(-size * 0.35, size * 0.35), pos + Vector2(-size, 0), pos + Vector2(-size * 0.35, -size * 0.35)]), color)
 
 func _draw_world() -> void:
-	draw_rect(Rect2(0, FLOOR_Y, VIEW.x, VIEW.y - FLOOR_Y), Color("#151b3d"))
-	for x in range(-100, 1500, 80):
-		var sx := fmod(x - camera_x, 1600.0); draw_line(Vector2(sx, FLOOR_Y), Vector2(sx - 70, VIEW.y), Color("#28346a"), 2.0)
+	var screen_size := get_viewport_rect().size
+	var fill_width: float = max(screen_size.x, VIEW.x)
+	var fill_height: float = max(screen_size.y, VIEW.y)
+	draw_rect(Rect2(0, FLOOR_Y, fill_width, fill_height - FLOOR_Y), Color("#151b3d"))
+	for x in range(-100, int(fill_width) + 1600, 80):
+		var sx := fmod(x - camera_x, 1600.0); draw_line(Vector2(sx, FLOOR_Y), Vector2(sx - 70, fill_height), Color("#28346a"), 2.0)
 	for object in objects:
 		if not consumed.has(object["id"]): _draw_object(object)
 	for particle in particles: draw_circle(particle["p"] - Vector2(camera_x, 0), 3.0 + particle["life"] * 4.0, Color(particle["color"], particle["life"]))

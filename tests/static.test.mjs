@@ -27,6 +27,7 @@ assert.match(game, /func _draw_builder/);
 assert.match(game, /func _draw_tiny_skeleton/);
 assert.match(game, /"DANGER"/);
 assert.match(game, /"FLIP"/);
+assert.match(game, /get_viewport_rect\(\)\.size/);
 assert.match(data, /static func validate/);
 assert.match(data, /moving_platform/);
 assert.match(data, /quiz/);
