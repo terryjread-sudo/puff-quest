@@ -773,40 +773,58 @@ func _draw_boss_background(pulse: float, fill_size: Vector2) -> void:
 		_draw_sparkle(Vector2(shard_x, shard_y), 4.0 + pulse * 3.0, Color("#f5e27e"))
 
 func _draw_chaser() -> void:
-	# A huge kawaii skeleton now crawls behind the runner: only its head,
-	# shoulders and floor-scraping arms are visible above the horizon.
+	# A huge kawaii skeleton marches behind the runner like the front of a
+	# candy-coloured parade, with an exaggerated alternating stride.
 	var chase_mode: bool = _chase_active()
 	var chaser_offset: float = 250.0 if chase_mode else 350.0
 	var chaser_x: float = clampf(player.x - camera_x - chaser_offset, 150.0, 470.0)
-	var crawl: float = sin(background_time * 5.0)
+	var stride: float = sin(background_time * 5.5)
 	var head: Vector2 = Vector2(chaser_x, 184.0 + sin(background_time * 2.3) * 7.0)
-	var shoulder_y: float = head.y + 104.0
-	var left_elbow: Vector2 = Vector2(chaser_x - 100.0 + crawl * 22.0, 408.0)
-	var right_elbow: Vector2 = Vector2(chaser_x + 100.0 - crawl * 22.0, 408.0)
-	var left_hand: Vector2 = Vector2(chaser_x - 218.0 - crawl * 24.0, FLOOR_Y - 16.0)
-	var right_hand: Vector2 = Vector2(chaser_x + 218.0 + crawl * 24.0, FLOOR_Y - 16.0)
+	var shoulder: Vector2 = Vector2(chaser_x, head.y + 104.0)
+	var pelvis: Vector2 = shoulder + Vector2(0.0, 136.0)
+	var left_elbow: Vector2 = shoulder + Vector2(-84.0 - stride * 30.0, 68.0)
+	var right_elbow: Vector2 = shoulder + Vector2(84.0 + stride * 30.0, 68.0)
+	var left_hand: Vector2 = shoulder + Vector2(-102.0 - stride * 46.0, 142.0)
+	var right_hand: Vector2 = shoulder + Vector2(102.0 + stride * 46.0, 142.0)
+	var left_knee: Vector2 = pelvis + Vector2(-48.0 + stride * 50.0, 68.0)
+	var right_knee: Vector2 = pelvis + Vector2(48.0 - stride * 50.0, 68.0)
+	var left_foot: Vector2 = pelvis + Vector2(-70.0 + stride * 94.0, 154.0)
+	var right_foot: Vector2 = pelvis + Vector2(70.0 - stride * 94.0, 154.0)
 	var bone_shadow: Color = Color(0.22, 0.15, 0.38, 0.72)
 	var bone: Color = Color("#fff5dd")
 
 	draw_circle(head + Vector2(0.0, 14.0), 155.0 + _beat_pulse() * 12.0, Color(1.0, 0.72, 0.88, 0.08))
-	draw_line(Vector2(chaser_x - 125.0, shoulder_y), Vector2(chaser_x + 125.0, shoulder_y), bone_shadow, 82.0)
-	draw_circle(Vector2(chaser_x - 112.0, shoulder_y), 42.0, bone_shadow)
-	draw_circle(Vector2(chaser_x + 112.0, shoulder_y), 42.0, bone_shadow)
-	draw_line(Vector2(chaser_x - 120.0, shoulder_y - 7.0), Vector2(chaser_x + 120.0, shoulder_y - 7.0), bone, 60.0)
-	draw_circle(Vector2(chaser_x - 112.0, shoulder_y - 7.0), 30.0, bone)
-	draw_circle(Vector2(chaser_x + 112.0, shoulder_y - 7.0), 30.0, bone)
-
-	for arm in [[Vector2(chaser_x - 112.0, shoulder_y), left_elbow, left_hand], [Vector2(chaser_x + 112.0, shoulder_y), right_elbow, right_hand]]:
-		draw_line(arm[0], arm[1], bone_shadow, 30.0)
-		draw_line(arm[1], arm[2], bone_shadow, 26.0)
-		draw_line(arm[0], arm[1], bone, 20.0)
-		draw_line(arm[1], arm[2], bone, 16.0)
-		draw_circle(arm[1], 18.0, bone)
-		draw_circle(arm[2], 20.0, bone)
-	draw_line(left_hand, left_hand + Vector2(-34.0, 10.0), bone, 8.0)
-	draw_line(left_hand, left_hand + Vector2(-28.0, -8.0), bone, 7.0)
-	draw_line(right_hand, right_hand + Vector2(34.0, 10.0), bone, 8.0)
-	draw_line(right_hand, right_hand + Vector2(28.0, -8.0), bone, 7.0)
+	draw_line(shoulder, pelvis, bone_shadow, 58.0)
+	draw_line(shoulder, pelvis, bone, 38.0)
+	draw_line(shoulder + Vector2(-34.0, 34.0), shoulder + Vector2(34.0, 34.0), Color("#34245e"), 7.0)
+	draw_line(shoulder + Vector2(-29.0, 65.0), shoulder + Vector2(29.0, 65.0), Color("#34245e"), 7.0)
+	draw_circle(pelvis, 36.0, bone)
+	draw_line(pelvis, left_knee, bone_shadow, 28.0)
+	draw_line(left_knee, left_foot, bone_shadow, 24.0)
+	draw_line(pelvis, right_knee, bone_shadow, 28.0)
+	draw_line(right_knee, right_foot, bone_shadow, 24.0)
+	draw_line(pelvis, left_knee, bone, 18.0)
+	draw_line(left_knee, left_foot, bone, 15.0)
+	draw_line(pelvis, right_knee, bone, 18.0)
+	draw_line(right_knee, right_foot, bone, 15.0)
+	draw_circle(left_knee, 17.0, bone)
+	draw_circle(right_knee, 17.0, bone)
+	draw_circle(left_foot, 22.0, bone)
+	draw_circle(right_foot, 22.0, bone)
+	draw_line(left_foot, left_foot + Vector2(-42.0, 4.0), bone, 10.0)
+	draw_line(right_foot, right_foot + Vector2(-42.0, 4.0), bone, 10.0)
+	draw_line(shoulder - Vector2(108.0, 0.0), left_elbow, bone_shadow, 30.0)
+	draw_line(left_elbow, left_hand, bone_shadow, 26.0)
+	draw_line(shoulder - Vector2(108.0, 0.0), left_elbow, bone, 20.0)
+	draw_line(left_elbow, left_hand, bone, 16.0)
+	draw_line(shoulder + Vector2(108.0, 0.0), right_elbow, bone_shadow, 30.0)
+	draw_line(right_elbow, right_hand, bone_shadow, 26.0)
+	draw_line(shoulder + Vector2(108.0, 0.0), right_elbow, bone, 20.0)
+	draw_line(right_elbow, right_hand, bone, 16.0)
+	draw_circle(left_elbow, 18.0, bone)
+	draw_circle(right_elbow, 18.0, bone)
+	draw_circle(left_hand, 21.0, bone)
+	draw_circle(right_hand, 21.0, bone)
 
 	draw_circle(head, 112.0, bone_shadow)
 	draw_circle(head, 102.0, bone)
@@ -825,7 +843,7 @@ func _draw_chaser() -> void:
 	for object in runtime_objects:
 		var target_x: float = _object_x(object) - camera_x
 		if target_x > chaser_x and target_x < VIEW.x + 120.0:
-			draw_line(Vector2(chaser_x + 108.0, shoulder_y), Vector2(target_x, FLOOR_Y - 36.0), Color(1.0, 0.45, 0.62, 0.28), 3.0)
+			draw_line(shoulder + Vector2(108.0, 0.0), Vector2(target_x, FLOOR_Y - 36.0), Color(1.0, 0.45, 0.62, 0.28), 3.0)
 
 func _draw_kawaii_bone_carnival(pulse: float) -> void:
 	# Original pastel spooky-cute background set piece: all shapes are drawn in code.
@@ -871,9 +889,9 @@ func _draw_kawaii_bone_carnival(pulse: float) -> void:
 		var confetti_y := 110.0 + fmod(background_time * (24.0 + i * 2.0) + i * 73.0, 310.0)
 		var confetti_color: Color = [Color("#7cf5ff"), Color("#ff9dbc"), Color("#f5e27e"), Color("#b06cff")][i % 4]
 		draw_line(Vector2(confetti_x, confetti_y), Vector2(confetti_x + 9.0, confetti_y + 12.0), Color(confetti_color, 0.65), 4.0)
-	for i in range(4):
-		var parade_x := fmod(180.0 + i * 340.0 - camera_x * 0.22, 1500.0) - 80.0
-		var parade_y := 425.0 + sin(background_time * 2.0 + i) * 9.0
+	for i in range(5):
+		var parade_x: float = fmod(180.0 + i * 300.0 + background_time * (48.0 + i * 7.0) - camera_x * 0.22, 1680.0) - 140.0
+		var parade_y: float = 485.0 + sin(background_time * 2.0 + i) * 5.0
 		_draw_tiny_skeleton(Vector2(parade_x, parade_y), i)
 
 	# Beat sparkles pop around the mascot like a cartoon celebration.
@@ -899,13 +917,35 @@ func _draw_cute_ghost(pos: Vector2, tint: Color, alpha: float) -> void:
 
 func _draw_tiny_skeleton(pos: Vector2, variant: int) -> void:
 	var tint: Color = [Color("#fff5dd"), Color("#ffd8ed"), Color("#d7f8ff")][variant % 3]
-	draw_circle(pos + Vector2(0, -20), 14.0, Color(tint, 0.72))
-	draw_circle(pos + Vector2(-5, -22), 3.0, Color("#34245e"))
-	draw_circle(pos + Vector2(5, -22), 3.0, Color("#34245e"))
-	draw_line(pos + Vector2(0, -6), pos + Vector2(0, 24), Color(tint, 0.72), 6.0)
-	draw_line(pos + Vector2(-17, 3), pos + Vector2(17, 3), Color(tint, 0.72), 5.0)
-	draw_line(pos + Vector2(0, 23), pos + Vector2(-12, 39), Color(tint, 0.72), 5.0)
-	draw_line(pos + Vector2(0, 23), pos + Vector2(12, 39), Color(tint, 0.72), 5.0)
+	var phase: float = background_time * 7.0 + float(variant) * 1.45
+	var stride: float = sin(phase)
+	var bob: float = abs(sin(phase)) * 3.0
+	var head: Vector2 = pos + Vector2(0.0, -42.0 - bob)
+	var shoulder: Vector2 = pos + Vector2(0.0, -20.0 - bob)
+	var hip: Vector2 = pos + Vector2(0.0, 12.0)
+	var left_elbow: Vector2 = shoulder + Vector2(-15.0 - stride * 8.0, 10.0)
+	var right_elbow: Vector2 = shoulder + Vector2(15.0 + stride * 8.0, 10.0)
+	var left_hand: Vector2 = shoulder + Vector2(-21.0 - stride * 15.0, 31.0)
+	var right_hand: Vector2 = shoulder + Vector2(21.0 + stride * 15.0, 31.0)
+	var left_knee: Vector2 = hip + Vector2(-9.0 + stride * 12.0, 20.0)
+	var right_knee: Vector2 = hip + Vector2(9.0 - stride * 12.0, 20.0)
+	var left_foot: Vector2 = hip + Vector2(-12.0 + stride * 25.0, 45.0)
+	var right_foot: Vector2 = hip + Vector2(12.0 - stride * 25.0, 45.0)
+	var bone: Color = Color(tint, 0.78)
+	var shadow: Color = Color(0.18, 0.12, 0.32, 0.58)
+	for limb in [[shoulder, left_elbow, left_hand], [shoulder, right_elbow, right_hand], [hip, left_knee, left_foot], [hip, right_knee, right_foot]]:
+		draw_line(limb[0], limb[1], shadow, 9.0)
+		draw_line(limb[1], limb[2], shadow, 8.0)
+		draw_line(limb[0], limb[1], bone, 5.0)
+		draw_line(limb[1], limb[2], bone, 4.0)
+		draw_circle(limb[1], 6.0, bone)
+	draw_line(shoulder, hip, shadow, 10.0)
+	draw_line(shoulder, hip, bone, 6.0)
+	draw_circle(head, 16.0, shadow)
+	draw_circle(head, 13.0, bone)
+	draw_circle(head + Vector2(-5.0, -2.0), 3.0, Color("#34245e"))
+	draw_circle(head + Vector2(5.0, -2.0), 3.0, Color("#34245e"))
+	draw_arc(head + Vector2(0.0, 3.0), 6.0, 0.2, PI - 0.2, 10, Color("#34245e"), 2.0)
 
 func _draw_sparkle(pos: Vector2, size: float, color: Color) -> void:
 	draw_colored_polygon(PackedVector2Array([pos + Vector2(0, -size), pos + Vector2(size * 0.35, -size * 0.35), pos + Vector2(size, 0), pos + Vector2(size * 0.35, size * 0.35), pos + Vector2(0, size), pos + Vector2(-size * 0.35, size * 0.35), pos + Vector2(-size, 0), pos + Vector2(-size * 0.35, -size * 0.35)]), color)
