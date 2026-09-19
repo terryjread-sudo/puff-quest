@@ -74,7 +74,7 @@ func _apply_level(data: Dictionary) -> void:
 
 func _setup_music() -> void:
 	music_player = AudioStreamPlayer.new()
-	var stream := load("res://assets/circuit-punk-game-menu.mp3") as AudioStreamMP3
+	var stream := load("res://assets/cyberpunk-menu-music.mp3") as AudioStreamMP3
 	if stream != null:
 		stream.loop = true
 		music_player.stream = stream
