@@ -47,6 +47,7 @@ var quiz_correct_index := 0
 var quiz_points := 0
 var quiz_streak := 0
 var quiz_snapshot: Dictionary = {}
+var quiz_input_lock := 0.0
 var quiz_feedback_time := 0.0
 var quiz_feedback_text := ""
 var quiz_feedback_answer := 0
@@ -159,6 +160,7 @@ func _process(delta: float) -> void:
 	var dt: float = min(delta, 0.05)
 	background_time += dt
 	message_time = max(0.0, message_time - dt); flash = max(0.0, flash - dt)
+	quiz_input_lock = max(0.0, quiz_input_lock - dt)
 	invulnerability = max(0.0, invulnerability - dt)
 	checkpoint_flash = max(0.0, checkpoint_flash - dt)
 	chase_flash = max(0.0, chase_flash - dt)
@@ -219,6 +221,7 @@ func _quiz_step(delta: float) -> void:
 func _input(event: InputEvent) -> void:
 	if quiz_feedback_time > 0.0: return
 	if quiz_active:
+		if quiz_input_lock > 0.0: return
 		if event is InputEventKey and event.pressed and not event.echo and event.keycode >= KEY_1 and event.keycode <= KEY_3:
 			_answer_quiz(event.keycode - KEY_1)
 		elif event is InputEventMouseButton and event.pressed:
@@ -548,7 +551,7 @@ func _check_triggers() -> void:
 
 func _start_quiz(trigger: Dictionary) -> void:
 	quiz_snapshot = {"player": player, "velocity": velocity, "camera_x": camera_x, "run_time": run_time, "gravity_sign": gravity_sign, "gravity_until": gravity_until, "speed_until": speed_until, "catapult_boost_left": catapult_boost_left, "music_position": music_player.get_playback_position() if music_player != null else 0.0}
-	quiz_active = true; quiz_feedback_time = 0.0; quiz_time = 10.0; quiz_table = int(trigger.get("table", 2)); quiz_number = rng.randi_range(1, 12)
+	quiz_active = true; quiz_input_lock = 0.18; quiz_feedback_time = 0.0; quiz_time = 10.0; quiz_table = int(trigger.get("table", 2)); quiz_number = rng.randi_range(1, 12)
 	var correct: int = quiz_number * quiz_table; quiz_choices = [correct, correct + rng.randi_range(1, 3), max(2, correct - rng.randi_range(1, 3))]; quiz_choices.shuffle(); quiz_correct_index = quiz_choices.find(correct); message = "TIME SHIFT"; message_time = 1.0
 
 func _answer_quiz(choice: int) -> void:
@@ -659,8 +662,11 @@ func _object_rect(object: Dictionary) -> Rect2:
 
 func _quiz_choice_at(pos: Vector2) -> int:
 	for i in range(3):
-		if Rect2(140 + i * 350, 360, 300, 190).has_point(pos): return i
+		if _quiz_choice_rect(i).has_point(pos): return i
 	return -1
+
+func _quiz_choice_rect(index: int) -> Rect2:
+	return Rect2(140.0 + index * 350.0, 310.0, 300.0, 150.0)
 
 func _update_particles(delta: float) -> void:
 	for i in range(particles.size() - 1, -1, -1):
@@ -767,21 +773,57 @@ func _draw_boss_background(pulse: float, fill_size: Vector2) -> void:
 		_draw_sparkle(Vector2(shard_x, shard_y), 4.0 + pulse * 3.0, Color("#f5e27e"))
 
 func _draw_chaser() -> void:
-	var chaser_x: float = clampf(player.x - camera_x - 155.0, 70.0, 280.0)
-	var chaser_y: float = FLOOR_Y - 138.0 + sin(background_time * 5.0) * 8.0
-	var chaser: Vector2 = Vector2(chaser_x, chaser_y)
-	draw_circle(chaser, 58.0, Color("#fff5dd"))
-	draw_circle(chaser + Vector2(-20.0, -10.0), 12.0, Color("#34245e"))
-	draw_circle(chaser + Vector2(20.0, -10.0), 12.0, Color("#34245e"))
-	draw_circle(chaser + Vector2(-20.0, -10.0), 5.0, Color("#ff9dbc"))
-	draw_circle(chaser + Vector2(20.0, -10.0), 5.0, Color("#ff9dbc"))
-	draw_arc(chaser + Vector2(0.0, 8.0), 24.0, 0.15, PI - 0.15, 18, Color("#34245e"), 5.0)
-	draw_line(chaser + Vector2(-48.0, 40.0), chaser + Vector2(-82.0, 96.0), Color("#fff5dd"), 14.0)
-	draw_line(chaser + Vector2(48.0, 40.0), chaser + Vector2(82.0, 96.0), Color("#fff5dd"), 14.0)
+	# A huge kawaii skeleton now crawls behind the runner: only its head,
+	# shoulders and floor-scraping arms are visible above the horizon.
+	var chaser_x: float = clampf(player.x - camera_x - 250.0, 150.0, 470.0)
+	var crawl: float = sin(background_time * 5.0)
+	var head: Vector2 = Vector2(chaser_x, 184.0 + sin(background_time * 2.3) * 7.0)
+	var shoulder_y: float = head.y + 104.0
+	var left_elbow: Vector2 = Vector2(chaser_x - 100.0 + crawl * 22.0, 408.0)
+	var right_elbow: Vector2 = Vector2(chaser_x + 100.0 - crawl * 22.0, 408.0)
+	var left_hand: Vector2 = Vector2(chaser_x - 218.0 - crawl * 24.0, FLOOR_Y - 16.0)
+	var right_hand: Vector2 = Vector2(chaser_x + 218.0 + crawl * 24.0, FLOOR_Y - 16.0)
+	var bone_shadow: Color = Color(0.22, 0.15, 0.38, 0.72)
+	var bone: Color = Color("#fff5dd")
+
+	draw_circle(head + Vector2(0.0, 14.0), 155.0 + _beat_pulse() * 12.0, Color(1.0, 0.72, 0.88, 0.08))
+	draw_line(Vector2(chaser_x - 125.0, shoulder_y), Vector2(chaser_x + 125.0, shoulder_y), bone_shadow, 82.0)
+	draw_circle(Vector2(chaser_x - 112.0, shoulder_y), 42.0, bone_shadow)
+	draw_circle(Vector2(chaser_x + 112.0, shoulder_y), 42.0, bone_shadow)
+	draw_line(Vector2(chaser_x - 120.0, shoulder_y - 7.0), Vector2(chaser_x + 120.0, shoulder_y - 7.0), bone, 60.0)
+	draw_circle(Vector2(chaser_x - 112.0, shoulder_y - 7.0), 30.0, bone)
+	draw_circle(Vector2(chaser_x + 112.0, shoulder_y - 7.0), 30.0, bone)
+
+	for arm in [[Vector2(chaser_x - 112.0, shoulder_y), left_elbow, left_hand], [Vector2(chaser_x + 112.0, shoulder_y), right_elbow, right_hand]]:
+		draw_line(arm[0], arm[1], bone_shadow, 30.0)
+		draw_line(arm[1], arm[2], bone_shadow, 26.0)
+		draw_line(arm[0], arm[1], bone, 20.0)
+		draw_line(arm[1], arm[2], bone, 16.0)
+		draw_circle(arm[1], 18.0, bone)
+		draw_circle(arm[2], 20.0, bone)
+	draw_line(left_hand, left_hand + Vector2(-34.0, 10.0), bone, 8.0)
+	draw_line(left_hand, left_hand + Vector2(-28.0, -8.0), bone, 7.0)
+	draw_line(right_hand, right_hand + Vector2(34.0, 10.0), bone, 8.0)
+	draw_line(right_hand, right_hand + Vector2(28.0, -8.0), bone, 7.0)
+
+	draw_circle(head, 112.0, bone_shadow)
+	draw_circle(head, 102.0, bone)
+	draw_circle(head + Vector2(0.0, 8.0), 88.0, Color("#fff8e9"))
+	draw_circle(head + Vector2(-34.0, -13.0), 22.0, Color("#34245e"))
+	draw_circle(head + Vector2(34.0, -13.0), 22.0, Color("#34245e"))
+	draw_circle(head + Vector2(-34.0, -13.0), 9.0, Color("#7cf5ff"))
+	draw_circle(head + Vector2(34.0, -13.0), 9.0, Color("#7cf5ff"))
+	draw_circle(head + Vector2(-61.0, 27.0), 13.0, Color("#ff9dbc"))
+	draw_circle(head + Vector2(61.0, 27.0), 13.0, Color("#ff9dbc"))
+	draw_arc(head + Vector2(0.0, 16.0), 43.0, 0.16, PI - 0.16, 22, Color("#34245e"), 7.0)
+	draw_line(head + Vector2(-74.0, -70.0), head + Vector2(-38.0, -94.0), Color("#ff9dbc"), 8.0)
+	draw_line(head + Vector2(74.0, -70.0), head + Vector2(38.0, -94.0), Color("#ff9dbc"), 8.0)
+	_draw_sparkle(head + Vector2(-132.0, 12.0), 7.0, Color("#f5e27e"))
+	_draw_sparkle(head + Vector2(132.0, 28.0), 6.0, Color("#7cf5ff"))
 	for object in runtime_objects:
 		var target_x: float = _object_x(object) - camera_x
 		if target_x > chaser_x and target_x < VIEW.x + 120.0:
-			draw_line(chaser + Vector2(72.0, 48.0), Vector2(target_x, FLOOR_Y - 36.0), Color(1.0, 0.45, 0.62, 0.28), 3.0)
+			draw_line(Vector2(chaser_x + 108.0, shoulder_y), Vector2(target_x, FLOOR_Y - 36.0), Color(1.0, 0.45, 0.62, 0.28), 3.0)
 
 func _draw_kawaii_bone_carnival(pulse: float) -> void:
 	# Original pastel spooky-cute background set piece: all shapes are drawn in code.
@@ -973,7 +1015,7 @@ func _draw_quiz() -> void:
 	else:
 		draw_string(ThemeDB.fallback_font, Vector2(0, 246), "Only the answer buttons are active", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 17, Color("#a9b8ef"))
 		for i in range(3):
-			var rect: Rect2 = Rect2(140.0 + i * 350.0, 360.0, 300.0, 190.0); draw_rect(rect, Color("#26336e")); draw_rect(rect, Color("#b06cff"), false, 5.0); draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, 125), "%d" % quiz_choices[i], HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 58, Color("#f5e27e"))
+			var rect: Rect2 = _quiz_choice_rect(i); draw_rect(rect, Color("#26336e")); draw_rect(rect, Color("#b06cff"), false, 5.0); draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, 108), "%d" % quiz_choices[i], HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 58, Color("#f5e27e"))
 		draw_string(ThemeDB.fallback_font, Vector2(0, 620), "TIME LEFT %.1f" % max(0.0, quiz_time), HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 22, Color("#ff9ab4"))
 
 func _draw_builder() -> void:
