@@ -64,6 +64,9 @@ var gravity_until := 0.0
 var catapult_state: Dictionary = {}
 var catapult_boost_left := 0.0
 var speed_until := 0.0
+var crash_timer := 0.0
+var checkpoint_flash := 0.0
+var crash_reason := ""
 var music_index := 0
 var undo_stack: Array = []
 var redo_stack: Array = []
@@ -129,8 +132,13 @@ func _process(delta: float) -> void:
 	background_time += dt
 	message_time = max(0.0, message_time - dt); flash = max(0.0, flash - dt)
 	invulnerability = max(0.0, invulnerability - dt)
+	checkpoint_flash = max(0.0, checkpoint_flash - dt)
 	_update_particles(dt)
 	if music_player != null: music_player.pitch_scale = 0.26 if quiz_active else 1.0
+	if crash_timer > 0.0:
+		crash_timer -= dt
+		if crash_timer <= 0.0: _respawn_at_checkpoint()
+		queue_redraw(); return
 	if not started or finished or paused or build_mode:
 		queue_redraw(); return
 	if quiz_active: _quiz_step(dt)
@@ -160,8 +168,11 @@ func _run_step(delta: float) -> void:
 		if velocity.y >= 0.0 and Rect2(player, PLAYER_SIZE).intersects(platform_rect) and player.y + PLAYER_SIZE.y - platform_rect.position.y < 24.0:
 			player.y = platform_rect.position.y - PLAYER_SIZE.y
 			velocity.y = 0.0
-	if player.y > VIEW.y + 160.0 or player.y < -180.0: _crash("MISSED THE PLATFORM")
+	if player.y > VIEW.y + 160.0 or player.y < -180.0:
+		_crash("MISSED THE PLATFORM")
+		return
 	_update_objects(); _check_objects(); _check_triggers()
+	if crash_timer > 0.0: return
 	for i in range(checkpoint_beats.size()):
 		if player.x >= START_X + checkpoint_beats[i] * _beat_width(): checkpoint_index = i
 	if player.x >= START_X + float(level["length_beats"]) * _beat_width(): _finish()
@@ -198,6 +209,8 @@ func _input(event: InputEvent) -> void:
 		if event is InputEventScreenTouch and not event.pressed: _builder_release()
 		return
 	if event.is_action_pressed("jump"):
+		if crash_timer > 0.0:
+			crash_timer = 0.0; _respawn_at_checkpoint(); return
 		if finished: _restart_run()
 		elif not started: _start_run()
 		elif quiz_active: _answer_quiz(0)
@@ -232,7 +245,7 @@ func _start_run() -> void:
 	started = true; paused = false; _ensure_music(); message = "FIND THE BEAT"; message_time = 1.5
 
 func _restart_run() -> void:
-	_apply_level(level); player = Vector2(START_X, FLOOR_Y - PLAYER_SIZE.y); velocity = Vector2.ZERO; camera_x = 0.0; run_time = 0.0; checkpoint_index = 0; combo = 0; score = 0; quiz_points = 0; quiz_streak = 0; shield_hits = 3; invulnerability = 0.0; finished = false; quiz_active = false; build_mode = false; paused = false; speed_until = 0.0; catapult_boost_left = 0.0; if music_player != null: music_player.stream_paused = false; _start_run()
+	_apply_level(level); player = Vector2(START_X, FLOOR_Y - PLAYER_SIZE.y); velocity = Vector2.ZERO; camera_x = 0.0; run_time = 0.0; checkpoint_index = 0; combo = 0; score = 0; quiz_points = 0; quiz_streak = 0; shield_hits = 3; invulnerability = 0.0; crash_timer = 0.0; checkpoint_flash = 0.0; finished = false; quiz_active = false; build_mode = false; paused = false; speed_until = 0.0; catapult_boost_left = 0.0; if music_player != null: music_player.stream_paused = false; _start_run()
 
 func _toggle_builder() -> void:
 	build_mode = not build_mode; paused = build_mode
@@ -458,7 +471,14 @@ func _take_hit(reason: String) -> void:
 	else: _crash(reason)
 
 func _crash(reason: String) -> void:
-	combo = 0; quiz_streak = 0; flash = 0.35; message = "%s • RESPAWN CHECKPOINT %d" % [reason, checkpoint_index]; message_time = 1.4; player = Vector2(START_X + checkpoint_beats[checkpoint_index] * _beat_width(), FLOOR_Y - PLAYER_SIZE.y); velocity = Vector2.ZERO; dash_left = 0.0; dash_cooldown = 0.0; gravity_sign = 1.0; gravity_until = 0.0; speed_until = 0.0; catapult_boost_left = 0.0; quiz_active = false; consumed.clear(); triggered.clear(); catapult_state.clear()
+	combo = 0; quiz_streak = 0; flash = 0.35; crash_reason = reason; crash_timer = 0.42; message = "CRASH!"; message_time = 0.42; _spawn_burst(player + PLAYER_SIZE * 0.5, Color("#ff698f"), 24)
+
+func _respawn_at_checkpoint() -> void:
+	player = Vector2(START_X + checkpoint_beats[checkpoint_index] * _beat_width(), FLOOR_Y - PLAYER_SIZE.y)
+	velocity = Vector2.ZERO; dash_left = 0.0; dash_cooldown = 0.0; gravity_sign = 1.0; gravity_until = 0.0; speed_until = 0.0; catapult_boost_left = 0.0; quiz_active = false; consumed.clear(); triggered.clear(); catapult_state.clear(); invulnerability = 0.55; checkpoint_flash = 1.5
+	for trigger in triggers:
+		if float(trigger["beat"]) < checkpoint_beats[checkpoint_index]: triggered[trigger["id"]] = true
+	message = "CHECKPOINT %02d • GO!" % checkpoint_index; message_time = 1.0
 	for trigger in triggers:
 		if float(trigger["beat"]) < checkpoint_beats[checkpoint_index]: triggered[trigger["id"]] = true
 
@@ -653,11 +673,47 @@ func _draw_world() -> void:
 	draw_rect(Rect2(0, FLOOR_Y, fill_width, fill_height - FLOOR_Y), Color("#151b3d"))
 	for x in range(-100, int(fill_width) + 1600, 80):
 		var sx := fmod(x - camera_x, 1600.0); draw_line(Vector2(sx, FLOOR_Y), Vector2(sx - 70, fill_height), Color("#28346a"), 2.0)
+	_draw_checkpoint_marker()
+	if started and not build_mode and not quiz_active and not finished and not _is_grounded(): _draw_landing_trace()
 	for object in objects:
 		if not consumed.has(object["id"]): _draw_object(object)
 	for particle in particles: draw_circle(particle["p"] - Vector2(camera_x, 0), 3.0 + particle["life"] * 4.0, Color(particle["color"], particle["life"]))
 	var center := player - Vector2(camera_x, 0) + PLAYER_SIZE * 0.5; draw_set_transform(center, run_time * 2.0 if dash_left > 0.0 else 0.0, Vector2.ONE); draw_rect(Rect2(-23, -23, 46, 46), Color("#75f1ff")); draw_rect(Rect2(-16, -16, 32, 32), Color("#182450")); draw_rect(Rect2(-8, -8, 16, 16), Color("#f5e27e")); draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	if shield_hits > 0 or invulnerability > 0.0: draw_arc(center, 38.0 + sin(background_time * 8.0) * 3.0, 0.0, TAU, 32, Color("#a8ffd0") if shield_hits > 0 else Color("#ffffff"), 4.0)
+	if crash_timer > 0.0:
+		draw_circle(player - Vector2(camera_x, 0) + PLAYER_SIZE * 0.5, 42.0 + sin(background_time * 24.0) * 5.0, Color(1.0, 0.25, 0.45, 0.12))
+
+func _draw_landing_trace() -> void:
+	var step := 0.045
+	var simulated_position := player
+	var simulated_velocity := velocity
+	var previous_screen := simulated_position - Vector2(camera_x, 0) + PLAYER_SIZE * 0.5
+	var landing := Vector2.ZERO
+	var found_landing := false
+	for i in range(32):
+		simulated_velocity.y += GRAVITY * gravity_sign * step
+		simulated_position += simulated_velocity * step
+		var current_screen := simulated_position - Vector2(camera_x, 0) + PLAYER_SIZE * 0.5
+		draw_line(previous_screen, current_screen, Color(0.66, 1.0, 0.83, 0.34), 3.0)
+		if i % 3 == 0: draw_circle(current_screen, 4.0 + float(i % 2), Color(0.66, 1.0, 0.83, 0.75))
+		previous_screen = current_screen
+		if gravity_sign > 0.0 and simulated_position.y + PLAYER_SIZE.y >= FLOOR_Y:
+			landing = Vector2(simulated_position.x, FLOOR_Y - PLAYER_SIZE.y); found_landing = true; break
+		if gravity_sign < 0.0 and simulated_position.y <= 90.0:
+			landing = Vector2(simulated_position.x, 90.0); found_landing = true; break
+	if not found_landing: return
+	var landing_screen := landing - Vector2(camera_x, 0) + PLAYER_SIZE * 0.5
+	draw_line(landing_screen + Vector2(-22, 0), landing_screen + Vector2(22, 0), Color("#a8ffd0"), 4.0)
+	draw_line(landing_screen + Vector2(0, -22), landing_screen + Vector2(0, 22), Color(0.66, 1.0, 0.83, 0.72), 3.0)
+	draw_arc(landing_screen, 18.0 + sin(background_time * 8.0) * 3.0, 0.0, TAU, 20, Color("#a8ffd0"), 3.0)
+
+func _draw_checkpoint_marker() -> void:
+	var marker_x := START_X + checkpoint_beats[checkpoint_index] * _beat_width() - camera_x
+	var glow := 0.16 + min(0.46, checkpoint_flash * 0.35)
+	draw_line(Vector2(marker_x, FLOOR_Y - 116), Vector2(marker_x, FLOOR_Y + 4), Color(0.66, 1.0, 0.83, glow), 5.0)
+	draw_circle(Vector2(marker_x, FLOOR_Y - 116), 15.0 + checkpoint_flash * 5.0, Color(0.66, 1.0, 0.83, glow * 0.55))
+	draw_arc(Vector2(marker_x, FLOOR_Y - 116), 24.0 + checkpoint_flash * 7.0, 0.0, TAU, 24, Color(0.66, 1.0, 0.83, glow), 3.0)
+	draw_string(ThemeDB.fallback_font, Vector2(marker_x - 55, FLOOR_Y - 134), "CHECKPOINT %02d" % checkpoint_index, HORIZONTAL_ALIGNMENT_CENTER, 110, 13, Color(0.75, 1.0, 0.86, glow + 0.15))
 
 func _draw_object(object: Dictionary) -> void:
 	var kind: String = object["type"]; var rect := _object_rect(object); rect.position.x -= camera_x; var center := rect.get_center()
@@ -687,6 +743,7 @@ func _draw_hud() -> void:
 	draw_string(ThemeDB.fallback_font, Vector2(VIEW.x - 300, 46), "%d BPM  •  %s" % [int(level["music"]["bpm"]), "BUILDER" if build_mode else ("SLOWED" if quiz_active else "ON BEAT")], HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color("#cbbaff")); draw_string(ThemeDB.fallback_font, Vector2(VIEW.x - 300, 76), "DISTANCE %04d m" % int(player.x / 10.0), HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#8fa8df"))
 	if quiz_streak > 0: draw_string(ThemeDB.fallback_font, Vector2(470, 52), "QUIZ STREAK x%d" % quiz_streak, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#a8ffd0"))
 	if message_time > 0.0: draw_string(ThemeDB.fallback_font, Vector2(VIEW.x / 2 - 200, 145), message, HORIZONTAL_ALIGNMENT_CENTER, 400, 22, Color("#ffffff"))
+	if crash_timer > 0.0: draw_string(ThemeDB.fallback_font, Vector2(0, 188), "%s  •  TAP / SPACE TO RETRY NOW" % crash_reason, HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 18, Color("#ffb6c9"))
 	if started and not quiz_active and not build_mode and not finished: draw_string(ThemeDB.fallback_font, Vector2(34, VIEW.y - 30), "SPACE / TAP JUMP     X / TAP DASH     B BUILD", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.8, 0.9, 1.0, 0.7))
 
 func _draw_title() -> void:

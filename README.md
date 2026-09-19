@@ -14,7 +14,7 @@ Neon Twice is a fresh Godot 4 rhythm runner. The cube auto-runs through a neon o
 
 The current game contains no imported code, scenes, assets, or tests from the previous project. Visuals are drawn procedurally. The level is a versioned JSON-shaped data model containing red hazards, green interactive objects, timetable quiz triggers, stars, and checkpoints.
 
-Colour language is simple: red objects are dangerous, green objects help or change the run, and gold stars are collectibles. Crashes immediately respawn at the latest checkpoint.
+Colour language is simple: red objects are dangerous, green objects help or change the run, and gold stars are collectibles. Crashes show a short, readable impact moment before respawning at the latest checkpoint; Space or tap skips the moment for an instant retry. While airborne, a mint dotted trajectory and landing crosshair preview where the cube is expected to touch down, helping the player decide whether to dash.
 
 ## Run
 
