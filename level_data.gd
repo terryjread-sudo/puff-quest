@@ -14,8 +14,6 @@ static func default_level() -> Dictionary:
 			objects.append(_object("spike", beat, 0, {}, id)); id += 1
 		if beat % 13 == 0:
 			objects.append(_object("block", beat + 0.5, 0, {"height": 1.0}, id)); id += 1
-		if beat % 17 == 0:
-			objects.append(_object("laser_gate", beat + 0.25, 0, {"period": 4.0, "on_beats": 2.0}, id)); id += 1
 		if beat % 5 == 0:
 			objects.append(_object("star", beat + 0.4, 1 if beat % 10 == 0 else 0.6, {}, id)); id += 1
 	for beat in [31.0, 67.0, 105.0]:
@@ -48,7 +46,7 @@ static func validate(raw: Variant) -> Dictionary:
 static func _clean_objects(raw: Variant) -> Array:
 	var cleaned: Array = []
 	if not raw is Array: return cleaned
-	var allowed := ["block", "spike", "catapult", "bounce_pad", "moving_platform", "gravity_portal", "laser_gate", "speed_ring", "star", "checkpoint"]
+	var allowed := ["block", "spike", "catapult", "bounce_pad", "moving_platform", "gravity_portal", "speed_ring", "star", "checkpoint"]
 	for item in raw:
 		if not item is Dictionary or not allowed.has(str(item.get("type", ""))): continue
 		var properties: Dictionary = item.get("properties", {}) if item.get("properties", {}) is Dictionary else {}

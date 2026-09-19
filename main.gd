@@ -10,7 +10,7 @@ const GRAVITY := 1900.0
 const JUMP_VELOCITY := -720.0
 const DASH_SPEED := 920.0
 const DASH_TIME := 0.20
-const PALETTE := ["block", "spike", "catapult", "timetable", "bounce_pad", "moving_platform", "gravity_portal", "laser_gate", "speed_ring", "star", "checkpoint"]
+const PALETTE := ["block", "spike", "catapult", "timetable", "bounce_pad", "moving_platform", "gravity_portal", "speed_ring", "star", "checkpoint"]
 
 var level: Dictionary = {}
 var objects: Array = []
@@ -222,7 +222,6 @@ func _default_properties(kind: String) -> Dictionary:
 		"bounce_pad": return {"strength": 1.0}
 		"moving_platform": return {"travel_beats": 4.0, "distance_lanes": 2.0}
 		"gravity_portal": return {"duration_beats": 8.0}
-		"laser_gate": return {"period": 4.0, "on_beats": 2.0}
 		"speed_ring": return {"multiplier": 1.25, "duration_beats": 4.0}
 	return {}
 
@@ -277,9 +276,6 @@ func _check_objects() -> void:
 			"spike", "block":
 				if dash_left > 0.0: score += 40; consumed[id] = true; _spawn_burst(rect.position + rect.size * 0.5, Color("#ff698f"), 14)
 				else: _crash("HIT THE BEAT WALL")
-			"laser_gate":
-				var period: float = float(object["properties"].get("period", 4.0)); var on_beats: float = float(object["properties"].get("on_beats", 2.0))
-				if fmod(run_time, period * _music_beat()) < on_beats * _music_beat() and dash_left <= 0.0: _crash("LASER TIMING MISS")
 			"bounce_pad": velocity.y = JUMP_VELOCITY * float(object["properties"].get("strength", 1.0)); consumed[id] = true; _combo_event("BOUNCE")
 			"speed_ring": score += 75; consumed[id] = true; speed_until = run_time + float(object["properties"].get("duration_beats", 4.0)) * _music_beat(); _combo_event("SPEED UP"); _spawn_burst(rect.position + rect.size * 0.5, Color("#f5e27e"), 10)
 			"star": score += 75; consumed[id] = true; _combo_event("COLLECT"); _spawn_burst(rect.position + rect.size * 0.5, Color("#f5e27e"), 10)
@@ -306,7 +302,7 @@ func _start_dash() -> void:
 	dash_left = DASH_TIME; dash_cooldown = _music_beat() * 2.0; velocity = Vector2(DASH_SPEED, 0.0); _combo_event("DASH")
 
 func _crash(reason: String) -> void:
-	combo = 0; flash = 0.35; message = reason; message_time = 1.2; player = Vector2(START_X + checkpoint_beats[checkpoint_index] * _beat_width(), FLOOR_Y - PLAYER_SIZE.y); velocity = Vector2.ZERO; dash_left = 0.0; consumed.clear(); triggered.clear(); catapult_state.clear()
+	combo = 0; flash = 0.35; message = "%s • RESPAWN CHECKPOINT %d" % [reason, checkpoint_index]; message_time = 1.4; player = Vector2(START_X + checkpoint_beats[checkpoint_index] * _beat_width(), FLOOR_Y - PLAYER_SIZE.y); velocity = Vector2.ZERO; dash_left = 0.0; dash_cooldown = 0.0; gravity_sign = 1.0; gravity_until = 0.0; speed_until = 0.0; quiz_active = false; consumed.clear(); triggered.clear(); catapult_state.clear()
 	for trigger in triggers:
 		if float(trigger["beat"]) < checkpoint_beats[checkpoint_index]: triggered[trigger["id"]] = true
 
@@ -338,7 +334,6 @@ func _object_rect(object: Dictionary) -> Rect2:
 	match kind:
 		"spike": return Rect2(x - 20, FLOOR_Y - 54, 40, 54)
 		"block": return Rect2(x - 22, FLOOR_Y - 82 * float(object["properties"].get("height", 1.0)), 44, 82 * float(object["properties"].get("height", 1.0)))
-		"laser_gate": return Rect2(x - 10, 80, 20, FLOOR_Y - 80)
 		"catapult", "bounce_pad": return Rect2(x - 32, FLOOR_Y - 28, 64, 28)
 		"moving_platform": return Rect2(x - 45, y - 15, 90, 30)
 		"gravity_portal": return Rect2(x - 28, FLOOR_Y - 170, 56, 170)
@@ -477,31 +472,24 @@ func _draw_object(object: Dictionary) -> void:
 	var kind: String = object["type"]; var rect := _object_rect(object); rect.position.x -= camera_x; var center := rect.get_center()
 	match kind:
 		"spike":
-			draw_colored_polygon(PackedVector2Array([Vector2(rect.position.x, FLOOR_Y), Vector2(center.x, rect.position.y), Vector2(rect.end.x, FLOOR_Y)]), Color("#ff638c"))
-			draw_line(Vector2(center.x - 7, rect.position.y + 18), Vector2(center.x + 7, rect.position.y + 30), Color("#fff0f7"), 4.0)
-			draw_string(ThemeDB.fallback_font, Vector2(center.x - 28, rect.position.y - 10), "DANGER", HORIZONTAL_ALIGNMENT_CENTER, 56, 10, Color("#ffb6c9"))
+			draw_colored_polygon(PackedVector2Array([Vector2(rect.position.x, FLOOR_Y), Vector2(center.x, rect.position.y), Vector2(rect.end.x, FLOOR_Y)]), Color("#ed496f"))
+			draw_line(Vector2(center.x - 7, rect.position.y + 18), Vector2(center.x + 7, rect.position.y + 30), Color("#ffd6e2"), 4.0)
 		"block":
-			draw_rect(rect, Color("#b06cff")); draw_rect(rect.grow(-7.0), Color("#422a81"), false, 4.0)
-			draw_string(ThemeDB.fallback_font, Vector2(rect.position.x, rect.position.y + rect.size.y * 0.58), "WALL", HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 13, Color("#f4d9ff"))
-		"laser_gate":
-			var laser_period: float = float(object["properties"].get("period", 4.0)); var laser_on: float = float(object["properties"].get("on_beats", 2.0)); var active := fmod(run_time, laser_period * _music_beat()) < laser_on * _music_beat()
-			draw_circle(Vector2(center.x, rect.position.y), 18.0, Color("#ff8caa") if active else Color("#7cf5ff")); draw_circle(Vector2(center.x, rect.end.y), 18.0, Color("#ff8caa") if active else Color("#7cf5ff"))
-			draw_line(Vector2(center.x, rect.position.y), Vector2(center.x, rect.end.y), Color("#ff638c") if active else Color("#7cf5ff"), 8.0)
-			draw_string(ThemeDB.fallback_font, Vector2(center.x - 35, rect.position.y - 10), "ON" if active else "OFF", HORIZONTAL_ALIGNMENT_CENTER, 70, 12, Color("#ffb6c9") if active else Color("#a9f8ff"))
+			draw_rect(rect, Color("#ed496f")); draw_rect(rect.grow(-7.0), Color("#8d2348"), false, 4.0); draw_circle(rect.get_center(), 8.0, Color("#ffb6c9"))
 		"catapult":
-			draw_rect(rect, Color("#f2d35e")); draw_line(rect.position + Vector2(10, 10), rect.end - Vector2(10, 10), Color("#0b102b"), 4.0); draw_circle(Vector2(center.x, rect.position.y + 4), 10.0, Color("#ff8caa")); draw_string(ThemeDB.fallback_font, Vector2(rect.position.x - 15, rect.position.y - 12), "FLING", HORIZONTAL_ALIGNMENT_CENTER, 94, 11, Color("#fff0b3"))
+			draw_rect(rect, Color("#55d68a")); draw_line(rect.position + Vector2(10, 10), rect.end - Vector2(10, 10), Color("#124d46"), 4.0); draw_circle(Vector2(center.x, rect.position.y + 4), 10.0, Color("#a8ffd0"))
 		"bounce_pad":
-			draw_rect(rect, Color("#7cf5ff")); draw_line(Vector2(rect.position.x + 8, rect.end.y - 6), Vector2(center.x, rect.position.y + 5), Color("#0b102b"), 4.0); draw_line(Vector2(rect.end.x - 8, rect.end.y - 6), Vector2(center.x, rect.position.y + 5), Color("#0b102b"), 4.0); draw_string(ThemeDB.fallback_font, Vector2(rect.position.x - 10, rect.position.y - 12), "BOUNCE", HORIZONTAL_ALIGNMENT_CENTER, 84, 11, Color("#cfffff"))
+			draw_rect(rect, Color("#55d68a")); draw_line(Vector2(rect.position.x + 8, rect.end.y - 6), Vector2(center.x, rect.position.y + 5), Color("#124d46"), 4.0); draw_line(Vector2(rect.end.x - 8, rect.end.y - 6), Vector2(center.x, rect.position.y + 5), Color("#124d46"), 4.0)
 		"moving_platform":
-			draw_rect(rect, Color("#8fa8df")); draw_line(Vector2(rect.position.x - 18, center.y), Vector2(rect.position.x - 3, center.y), Color("#f5e27e"), 3.0); draw_line(Vector2(rect.end.x + 3, center.y), Vector2(rect.end.x + 18, center.y), Color("#f5e27e"), 3.0); draw_string(ThemeDB.fallback_font, Vector2(rect.position.x, rect.position.y - 10), "MOVE", HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 11, Color("#eef3ff"))
+			draw_rect(rect, Color("#55d68a")); draw_line(Vector2(rect.position.x - 18, center.y), Vector2(rect.position.x - 3, center.y), Color("#a8ffd0"), 3.0); draw_line(Vector2(rect.end.x + 3, center.y), Vector2(rect.end.x + 18, center.y), Color("#a8ffd0"), 3.0)
 		"gravity_portal":
-			draw_circle(center, 35.0 + sin(background_time * 4.0) * 3.0, Color(0.65, 0.35, 1.0, 0.18)); draw_arc(center, 35.0, 0.0, TAU, 24, Color("#ff9ab4"), 7.0); draw_string(ThemeDB.fallback_font, Vector2(center.x - 45, center.y + 5), "FLIP", HORIZONTAL_ALIGNMENT_CENTER, 90, 14, Color("#ffe0ec"))
+			draw_circle(center, 35.0 + sin(background_time * 4.0) * 3.0, Color(0.25, 0.95, 0.58, 0.18)); draw_arc(center, 35.0, 0.0, TAU, 24, Color("#55d68a"), 7.0); draw_arc(center, 20.0, 0.0, TAU, 16, Color("#a8ffd0"), 3.0)
 		"speed_ring":
-			draw_arc(center, 18.0, 0.0, TAU, 20, Color("#f5e27e"), 6.0); draw_arc(center, 29.0, 0.0, TAU, 20, Color("#ffca67"), 3.0); draw_string(ThemeDB.fallback_font, Vector2(center.x - 35, center.y + 48), "SPEED", HORIZONTAL_ALIGNMENT_CENTER, 70, 11, Color("#fff0b3"))
+			draw_arc(center, 18.0, 0.0, TAU, 20, Color("#55d68a"), 6.0); draw_arc(center, 29.0, 0.0, TAU, 20, Color("#a8ffd0"), 3.0)
 		"star":
 			draw_colored_polygon(PackedVector2Array([center + Vector2(0, -18), center + Vector2(9, 0), center + Vector2(0, 18), center + Vector2(-9, 0)]), Color("#f5e27e")); draw_circle(center, 5.0, Color("#fff8cf"))
 		"checkpoint":
-			draw_line(Vector2(center.x, rect.end.y), Vector2(center.x, rect.position.y), Color("#7cf5ff"), 5.0); draw_colored_polygon(PackedVector2Array([Vector2(center.x + 2, rect.position.y + 4), Vector2(center.x + 30, rect.position.y + 14), Vector2(center.x + 2, rect.position.y + 25)]), Color("#ff9dbc")); draw_string(ThemeDB.fallback_font, Vector2(center.x - 42, rect.position.y - 10), "SAVE", HORIZONTAL_ALIGNMENT_CENTER, 84, 11, Color("#cfffff"))
+			draw_line(Vector2(center.x, rect.end.y), Vector2(center.x, rect.position.y), Color("#55d68a"), 5.0); draw_colored_polygon(PackedVector2Array([Vector2(center.x + 2, rect.position.y + 4), Vector2(center.x + 30, rect.position.y + 14), Vector2(center.x + 2, rect.position.y + 25)]), Color("#a8ffd0"))
 
 func _draw_hud() -> void:
 	draw_rect(Rect2(24, 20, 420, 80), Color(0.04, 0.06, 0.16, 0.84)); draw_string(ThemeDB.fallback_font, Vector2(44, 52), "NEON TWICE", HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, Vector2(44, 80), "SCORE %06d    COMBO x%d" % [score, combo], HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#f5e27e"))
