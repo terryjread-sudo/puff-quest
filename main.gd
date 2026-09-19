@@ -124,8 +124,16 @@ func _load_level_music() -> void:
 	music_player.stream_paused = false
 
 func _ensure_music() -> void:
-	if music_started or music_player.stream == null: return
-	music_started = true; music_player.play()
+	if music_player == null or music_player.stream == null: return
+	if not music_player.playing: music_player.play()
+	music_player.stream_paused = false
+	music_started = true
+
+func _resume_music() -> void:
+	if music_player == null or music_player.stream == null: return
+	music_player.stream_paused = false
+	if not music_player.playing: music_player.play()
+	music_started = true
 
 func _music_beat() -> float:
 	return 60.0 / float(level["music"]["bpm"])
@@ -224,7 +232,9 @@ func _input(event: InputEvent) -> void:
 		if finished: _return_to_menu()
 		elif build_mode: _exit_builder()
 		else: paused = not paused
-		if music_player != null: music_player.stream_paused = paused or build_mode
+		if paused or build_mode:
+			if music_player != null: music_player.stream_paused = true
+		else: _resume_music()
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		if not started and (event.keycode == KEY_LEFT or event.keycode == KEY_UP):
@@ -325,7 +335,7 @@ func _save_progress() -> void:
 	JavaScriptBridge.eval("localStorage.setItem('neon_twice_progress', %s)" % JSON.stringify(payload))
 
 func _restart_run() -> void:
-	_apply_level(level); player = Vector2(START_X, FLOOR_Y - PLAYER_SIZE.y); velocity = Vector2.ZERO; camera_x = 0.0; run_time = 0.0; checkpoint_index = 0; combo = 0; score = 0; quiz_points = 0; quiz_streak = 0; shield_hits = 3; invulnerability = 0.0; crash_timer = 0.0; checkpoint_flash = 0.0; finished = false; quiz_active = false; quiz_feedback_time = 0.0; quiz_snapshot.clear(); build_mode = false; paused = false; speed_until = 0.0; catapult_boost_left = 0.0; runtime_objects.clear(); if music_player != null: music_player.stream_paused = false; _start_run()
+	_apply_level(level); player = Vector2(START_X, FLOOR_Y - PLAYER_SIZE.y); velocity = Vector2.ZERO; camera_x = 0.0; run_time = 0.0; checkpoint_index = 0; combo = 0; score = 0; quiz_points = 0; quiz_streak = 0; shield_hits = 3; invulnerability = 0.0; crash_timer = 0.0; checkpoint_flash = 0.0; finished = false; quiz_active = false; quiz_feedback_time = 0.0; quiz_snapshot.clear(); build_mode = false; paused = false; speed_until = 0.0; catapult_boost_left = 0.0; runtime_objects.clear(); _resume_music(); _start_run()
 
 func _toggle_builder() -> void:
 	build_mode = not build_mode; paused = build_mode
@@ -335,7 +345,7 @@ func _toggle_builder() -> void:
 
 func _exit_builder() -> void:
 	build_mode = false; paused = false
-	if music_player != null: music_player.stream_paused = false
+	_resume_music()
 	message = "PRESS ENTER TO TEST"; message_time = 1.4
 
 func _builder_key(key: Key) -> void:
@@ -560,12 +570,13 @@ func _restore_quiz_snapshot() -> void:
 	if quiz_snapshot.is_empty(): return
 	player = quiz_snapshot["player"]; velocity = quiz_snapshot["velocity"]; camera_x = float(quiz_snapshot["camera_x"]); run_time = float(quiz_snapshot["run_time"]); gravity_sign = float(quiz_snapshot["gravity_sign"]); gravity_until = float(quiz_snapshot["gravity_until"]); speed_until = float(quiz_snapshot["speed_until"]); catapult_boost_left = float(quiz_snapshot["catapult_boost_left"])
 	if music_player != null:
-		music_player.seek(float(quiz_snapshot["music_position"])); music_player.stream_paused = false
+		music_player.seek(float(quiz_snapshot["music_position"]))
+	_resume_music()
 	quiz_snapshot.clear()
 
 func _resolve_quiz_feedback() -> void:
 	quiz_feedback_time = 0.0
-	if music_player != null: music_player.stream_paused = false
+	_resume_music()
 	_take_hit(quiz_feedback_reason)
 	message = quiz_feedback_reason; message_time = 1.0
 
