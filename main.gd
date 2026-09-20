@@ -691,8 +691,6 @@ func _update_objects() -> void:
 	for object in objects + runtime_objects:
 		var id: String = object["id"]; var kind: String = object["type"]; var x := _object_x(object)
 		if consumed.has(id): continue
-		if kind == "catapult" and player.x >= x and not catapult_state.has(id): catapult_state[id] = run_time + float(object["properties"].get("delay_beats", 1.0)) * _music_beat()
-		if kind == "catapult" and catapult_state.has(id) and run_time >= catapult_state[id]: catapult_boost_left = float(object["properties"].get("launch_beats", 2.0)) * _music_beat(); velocity.y = -180.0; consumed[id] = true; message = "CATAPULT LAUNCH"; message_time = 0.8
 		if kind == "gravity_portal" and player.x >= x:
 			gravity_sign = -1.0; gravity_until = run_time + float(object["properties"].get("duration_beats", 8.0)) * _music_beat(); consumed[id] = true
 
@@ -768,6 +766,8 @@ func _check_objects() -> void:
 			"spike", "block":
 				if dash_left > 0.0: score += 40; consumed[id] = true; _spawn_burst(rect.position + rect.size * 0.5, Color("#ff698f"), 14)
 				else: _take_hit("HIT THE BEAT WALL")
+			"catapult":
+				catapult_boost_left = float(object["properties"].get("launch_beats", 2.0)) * _music_beat(); velocity.x = DASH_SPEED; velocity.y = JUMP_VELOCITY * 1.15; consumed[id] = true; _combo_event("CATAPULT"); _spawn_skin_burst(rect.position + rect.size * 0.5, 12); message = "CATAPULT! UP + FORWARD"; message_time = 1.0
 			"bounce_pad": velocity.y = JUMP_VELOCITY * float(object["properties"].get("strength", 1.0)); consumed[id] = true; _combo_event("BOUNCE")
 			"speed_ring": score += 75; consumed[id] = true; speed_until = run_time + float(object["properties"].get("duration_beats", 4.0)) * _music_beat(); _combo_event("SPEED UP"); _spawn_burst(rect.position + rect.size * 0.5, Color("#f5e27e"), 10)
 			"star": score += 75; diamonds += 1; run_diamonds_earned += 1; run_stars_collected += 1; consumed[id] = true; _combo_event("COLLECT"); _spawn_burst(rect.position + rect.size * 0.5, Color("#f5e27e"), 10); _save_progress()
@@ -1048,20 +1048,25 @@ func _draw_chaser() -> void:
 	if slam_timer > 0.0: _draw_slam_effect(chaser_x)
 
 func _draw_ghost_chaser() -> void:
-	if not chase_started: return
+	if not chase_started:
+		var preview_x := 1000.0 + sin(background_time * 0.7) * 42.0
+		draw_circle(Vector2(preview_x, 300.0), 138.0 + _beat_pulse() * 12.0, Color(0.72, 0.54, 0.95, 0.12))
+		_draw_ghost_sprite(ghost_float_sprite, Vector2(preview_x, 480.0), 0.88, int(floor(background_time / _music_beat() * 5.0)) % 8, Color(1.0, 1.0, 1.0, 0.68))
+		return
 	var player_screen_x := player.x - camera_x
 	var ghost_x := clampf(player_screen_x - 245.0, 120.0, 520.0)
 	var ghost_origin := Vector2(ghost_x, FLOOR_Y - 24.0)
 	var sprite: Texture2D = ghost_float_sprite
 	var frame_count := 8
 	var frame_index := int(floor(background_time / _music_beat() * 5.0)) % frame_count
-	var ghost_scale := 1.15
+	var ghost_scale := 1.62
 	if ghost_death_timer > 0.0:
-		sprite = ghost_death_sprite; frame_count = 12; frame_index = clampi(int(floor((1.25 - ghost_death_timer) / 1.25 * frame_count)), 0, frame_count - 1); ghost_scale = 1.12
+		sprite = ghost_death_sprite; frame_count = 12; frame_index = clampi(int(floor((1.25 - ghost_death_timer) / 1.25 * frame_count)), 0, frame_count - 1); ghost_scale = 1.52
 	elif ghost_final_started:
-		sprite = ghost_idle_sprite; frame_count = 8; frame_index = int(floor(background_time / _music_beat() * 4.0)) % frame_count; ghost_x = clampf(player_screen_x + 190.0, 610.0, 1030.0); ghost_origin = Vector2(ghost_x, FLOOR_Y - 28.0); ghost_scale = 1.16
+		sprite = ghost_idle_sprite; frame_count = 8; frame_index = int(floor(background_time / _music_beat() * 4.0)) % frame_count; ghost_x = clampf(player_screen_x + 190.0, 610.0, 1030.0); ghost_origin = Vector2(ghost_x, FLOOR_Y - 28.0); ghost_scale = 1.48
 	elif ghost_attack_timer > 0.0:
-		sprite = ghost_attack_sprite; frame_count = 12; frame_index = clampi(int(floor(ghost_attack_elapsed / 0.92 * frame_count)), 0, frame_count - 1); ghost_x = clampf(player_screen_x - 240.0 + ghost_attack_elapsed * 240.0, 120.0, 640.0); ghost_origin = Vector2(ghost_x, FLOOR_Y - 22.0); ghost_scale = 1.18
+		sprite = ghost_attack_sprite; frame_count = 12; frame_index = clampi(int(floor(ghost_attack_elapsed / 0.92 * frame_count)), 0, frame_count - 1); ghost_x = clampf(player_screen_x - 240.0 + ghost_attack_elapsed * 240.0, 120.0, 680.0); ghost_origin = Vector2(ghost_x, FLOOR_Y - 22.0); ghost_scale = 1.56
+	draw_circle(ghost_origin + Vector2(0.0, -110.0), 128.0 + _beat_pulse() * 16.0, Color(0.72, 0.54, 0.95, 0.10))
 	_draw_ghost_sprite(sprite, ghost_origin, ghost_scale, frame_index, Color(1.0, 1.0, 1.0, 0.98))
 
 func _draw_ghost_sprite(sprite: Texture2D, origin: Vector2, scale: float, frame_index: int, tint: Color) -> void:
@@ -1242,7 +1247,7 @@ func _draw_object(object: Dictionary) -> void:
 		"block":
 			draw_rect(rect, Color("#ed496f")); draw_rect(rect.grow(-7.0), Color("#8d2348"), false, 4.0); draw_circle(rect.get_center(), 8.0, Color("#ffb6c9"))
 		"catapult":
-			draw_rect(rect, Color("#55d68a")); draw_line(rect.position + Vector2(10, 10), rect.end - Vector2(10, 10), Color("#124d46"), 4.0); draw_circle(Vector2(center.x, rect.position.y + 4), 10.0, Color("#a8ffd0"))
+			draw_colored_polygon(PackedVector2Array([Vector2(rect.position.x, rect.end.y), Vector2(rect.end.x, rect.end.y), Vector2(rect.end.x - 10.0, rect.position.y + 7.0), Vector2(rect.position.x + 18.0, rect.position.y + 2.0)]), Color("#55d68a")); draw_line(Vector2(center.x - 18.0, rect.end.y - 4.0), Vector2(center.x + 8.0, rect.position.y - 12.0), Color("#124d46"), 7.0); draw_circle(Vector2(center.x - 18.0, rect.end.y - 4.0), 8.0, Color("#a8ffd0")); draw_circle(Vector2(center.x + 8.0, rect.position.y - 12.0), 10.0, Color("#f5e27e")); draw_colored_polygon(PackedVector2Array([Vector2(center.x + 8.0, rect.position.y - 34.0), Vector2(center.x - 2.0, rect.position.y - 20.0), Vector2(center.x + 3.0, rect.position.y - 20.0), Vector2(center.x + 3.0, rect.position.y - 10.0), Vector2(center.x + 13.0, rect.position.y - 10.0), Vector2(center.x + 13.0, rect.position.y - 20.0), Vector2(center.x + 18.0, rect.position.y - 20.0)]), Color("#a8ffd0"))
 		"bounce_pad":
 			draw_rect(rect, Color("#55d68a")); draw_line(Vector2(rect.position.x + 8, rect.end.y - 6), Vector2(center.x, rect.position.y + 5), Color("#124d46"), 4.0); draw_line(Vector2(rect.end.x - 8, rect.end.y - 6), Vector2(center.x, rect.position.y + 5), Color("#124d46"), 4.0)
 		"moving_platform":

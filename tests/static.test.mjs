@@ -39,6 +39,8 @@ assert.match(game, /_draw_beat_layers/);
 assert.match(game, /shield_hits/);
 assert.match(game, /invulnerability = max\(invulnerability, 2\.0\)/);
 assert.match(game, /catapult_boost_left/);
+assert.match(game, /CATAPULT! UP \+ FORWARD/);
+assert.match(game, /velocity\.y = JUMP_VELOCITY \* 1\.15/);
 assert.match(game, /_draw_background_details/);
 assert.match(game, /func _toggle_builder/);
 assert.match(game, /func _export_level/);
