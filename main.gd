@@ -92,6 +92,7 @@ var rng := RandomNumberGenerator.new()
 var music_player: AudioStreamPlayer
 var skeleton_sprite: Texture2D
 var ghost_float_sprite: Texture2D
+var ghost_float_left_sprite: Texture2D
 var ghost_attack_sprite: Texture2D
 var ghost_idle_sprite: Texture2D
 var ghost_death_sprite: Texture2D
@@ -115,8 +116,13 @@ var slam_flash := 0.0
 var ghost_attack_timer := 0.0
 var ghost_attack_elapsed := 0.0
 var ghost_attack_next_beat := -1.0
+var ghost_attack_phase_started := false
 var ghost_attack_resolved := false
 var ghost_attack_dodged := false
+var ghost_wave_active := false
+var ghost_wave_x := -1.0
+var ghost_wave_previous_x := -1.0
+var ghost_wave_offsets: Dictionary = {}
 var ghost_final_started := false
 var ghost_final_timer := 0.0
 var ghost_final_resolved := false
@@ -143,6 +149,7 @@ func _ready() -> void:
 	_setup_music()
 	skeleton_sprite = load("res://assets/skeleton-run-spritesheet.png") as Texture2D
 	ghost_float_sprite = load("res://assets/ghost-float-spritesheet.png") as Texture2D
+	ghost_float_left_sprite = load("res://assets/ghost-float-left-spritesheet.png") as Texture2D
 	ghost_attack_sprite = load("res://assets/ghost-attack-spritesheet.png") as Texture2D
 	ghost_idle_sprite = load("res://assets/ghost-idle3-spritesheet.png") as Texture2D
 	ghost_death_sprite = load("res://assets/ghost-death-spritesheet.png") as Texture2D
@@ -157,7 +164,7 @@ func _apply_level(data: Dictionary) -> void:
 	consumed.clear(); triggered.clear(); catapult_state.clear()
 	gravity_sign = 1.0; gravity_until = 0.0
 	chase_started = false; chase_flash = 0.0; slam_next_beat = -1.0; slam_offset = 0.0; slam_velocity = 0.0; slam_timer = 0.0; slam_flash = 0.0
-	ghost_attack_timer = 0.0; ghost_attack_elapsed = 0.0; ghost_attack_next_beat = -1.0; ghost_attack_resolved = false; ghost_attack_dodged = false; ghost_final_started = false; ghost_final_timer = 0.0; ghost_final_resolved = false; ghost_death_timer = 0.0
+	ghost_attack_timer = 0.0; ghost_attack_elapsed = 0.0; ghost_attack_next_beat = -1.0; ghost_attack_phase_started = false; ghost_attack_resolved = false; ghost_attack_dodged = false; ghost_wave_active = false; ghost_wave_x = -1.0; ghost_wave_previous_x = -1.0; ghost_wave_offsets.clear(); ghost_final_started = false; ghost_final_timer = 0.0; ghost_final_resolved = false; ghost_death_timer = 0.0
 	checkpoint_beats = [0.0]
 	for object in objects:
 		if object["type"] == "checkpoint": checkpoint_beats.append(float(object["beat"]))
@@ -711,22 +718,39 @@ func _start_chase() -> void:
 	slam_next_beat = chase_beat + SLAM_INTERVAL_BEATS
 
 func _start_ghost_chase() -> void:
-	chase_started = true; chase_flash = 1.2; ghost_attack_next_beat = float(level.get("chase_beat", 72.0)) + 10.0; ghost_attack_timer = 0.0; ghost_attack_elapsed = 0.0; ghost_attack_resolved = false; ghost_attack_dodged = false; ghost_final_started = false; ghost_final_timer = 0.0; ghost_final_resolved = false; ghost_death_timer = 0.0
+	chase_started = true; chase_flash = 1.2; ghost_attack_next_beat = -1.0; ghost_attack_phase_started = false; ghost_attack_timer = 0.0; ghost_attack_elapsed = 0.0; ghost_attack_resolved = false; ghost_wave_active = false; ghost_wave_x = -1.0; ghost_wave_previous_x = -1.0; ghost_wave_offsets.clear(); ghost_final_started = false; ghost_final_timer = 0.0; ghost_final_resolved = false; ghost_death_timer = 0.0
 	message = "A GHOST IS HUNTING YOU"; message_time = 1.5
 
 func _update_ghost_encounter(delta: float) -> void:
 	if str(level.get("theme", "")) != "metro" or not chase_started: return
+	for id in ghost_wave_offsets.keys():
+		var bounce: Dictionary = ghost_wave_offsets[id]
+		bounce["offset"] = float(bounce["offset"]) + float(bounce["velocity"]) * delta
+		bounce["velocity"] = float(bounce["velocity"]) + 1800.0 * delta
+		if float(bounce["offset"]) >= 0.0: ghost_wave_offsets.erase(id)
+		else: ghost_wave_offsets[id] = bounce
 	if ghost_death_timer > 0.0: return
 	if ghost_final_started:
 		ghost_final_timer -= delta
 		if ghost_final_timer <= 0.0 and not ghost_final_resolved:
 			ghost_final_resolved = true; ghost_final_started = false; _take_hit("THE GHOST CAUGHT YOU")
 		return
+	var attack_start_beat := float(level.get("length_beats", 196.0)) * 0.5
+	if not ghost_attack_phase_started:
+		if player.x >= START_X + attack_start_beat * _beat_width():
+			ghost_attack_phase_started = true; ghost_attack_next_beat = attack_start_beat + 8.0
+		return
+	if ghost_wave_active:
+		ghost_wave_previous_x = ghost_wave_x; ghost_wave_x -= 1180.0 * delta
+		if ghost_wave_previous_x >= player.x - camera_x and ghost_wave_x <= player.x - camera_x:
+			velocity.y = JUMP_VELOCITY * 0.72 * gravity_sign; _spawn_skin_burst(player + PLAYER_SIZE * 0.5, 7)
+		for object in objects + runtime_objects:
+			var object_screen_x := _object_x(object) - camera_x
+			if ghost_wave_previous_x >= object_screen_x and ghost_wave_x <= object_screen_x and object_screen_x > -80.0 and object_screen_x < VIEW.x + 80.0:
+				ghost_wave_offsets[object["id"]] = {"offset": -120.0, "velocity": -560.0}
+		if ghost_wave_x <= -120.0: ghost_wave_active = false
 	if ghost_attack_timer > 0.0:
 		ghost_attack_timer -= delta; ghost_attack_elapsed += delta
-		if ghost_attack_elapsed >= 0.58 and not ghost_attack_resolved:
-			ghost_attack_resolved = true
-			if not ghost_attack_dodged: _take_hit("GHOST SWEEP")
 		return
 	var final_beat := float(level.get("length_beats", 196.0)) - 30.0
 	if player.x >= START_X + final_beat * _beat_width() and not ghost_final_resolved:
@@ -735,14 +759,12 @@ func _update_ghost_encounter(delta: float) -> void:
 		_begin_ghost_attack()
 
 func _begin_ghost_attack() -> void:
-	ghost_attack_timer = 1.02; ghost_attack_elapsed = 0.0; ghost_attack_resolved = false; ghost_attack_dodged = false; ghost_attack_next_beat += 18.0; message = "DASH!"; message_time = 1.0
+	ghost_attack_timer = 1.02; ghost_attack_elapsed = 0.0; ghost_attack_resolved = false; ghost_wave_active = true; ghost_wave_x = VIEW.x + 120.0; ghost_wave_previous_x = ghost_wave_x; ghost_attack_next_beat += 18.0
 
 func _start_ghost_final() -> void:
 	ghost_final_started = true; ghost_final_timer = 3.0; ghost_final_resolved = false; message = "DASH THE GHOST!"; message_time = 3.0
 
-func _ghost_try_dodge() -> void:
-	if ghost_attack_timer > 0.0 and ghost_attack_elapsed >= 0.08 and ghost_attack_elapsed <= 0.88 and not ghost_attack_resolved:
-		ghost_attack_dodged = true; score += 180; _combo_event("GHOST DODGE"); message = "GHOST DODGED!"; message_time = 0.75
+func _defeat_ghost() -> void:
 	if ghost_final_started and not ghost_final_resolved:
 		ghost_final_resolved = true; ghost_final_started = false; ghost_death_timer = 1.25; score += 600; _combo_event("GHOST DEFEATED"); message = "GHOST DEFEATED!"; message_time = 1.25
 
@@ -812,7 +834,7 @@ func _resolve_quiz_feedback() -> void:
 
 func _start_dash() -> void:
 	if dash_cooldown > 0.0 or dash_left > 0.0: return
-	dash_left = DASH_TIME; dash_cooldown = _music_beat() * 2.0; velocity = Vector2(DASH_SPEED, 0.0); run_dashes += 1; _spawn_skin_burst(player + PLAYER_SIZE * 0.5, 8); _combo_event("DASH"); _ghost_try_dodge()
+	dash_left = DASH_TIME; dash_cooldown = _music_beat() * 2.0; velocity = Vector2(DASH_SPEED, 0.0); run_dashes += 1; _spawn_skin_burst(player + PLAYER_SIZE * 0.5, 8); _combo_event("DASH"); _defeat_ghost()
 
 func _take_hit(reason: String) -> void:
 	if invulnerability > 0.0: return
@@ -884,7 +906,7 @@ func _object_y(object: Dictionary) -> float:
 	return base
 
 func _object_rect(object: Dictionary) -> Rect2:
-	var kind: String = object["type"]; var x := _object_x(object); var y := _object_y(object); var slam_y := slam_offset if chase_started else 0.0
+	var kind: String = object["type"]; var x := _object_x(object); var y := _object_y(object); var slam_y := (slam_offset if chase_started else 0.0) + float(ghost_wave_offsets.get(object["id"], {}).get("offset", 0.0))
 	match kind:
 		"spike": return Rect2(x - 20, FLOOR_Y - 54 + slam_y, 40, 54)
 		"block": return Rect2(x - 22, FLOOR_Y - 82 * float(object["properties"].get("height", 1.0)) + slam_y, 44, 82 * float(object["properties"].get("height", 1.0)))
@@ -1052,9 +1074,17 @@ func _draw_ghost_chaser() -> void:
 	elif ghost_final_started:
 		sprite = ghost_idle_sprite; frame_count = 8; frame_index = int(floor(background_time / _music_beat() * 4.0)) % frame_count; ghost_x = clampf(player_screen_x + 190.0, 610.0, 1030.0); ghost_origin = Vector2(ghost_x, FLOOR_Y - 28.0); ghost_scale = 1.48
 	elif ghost_attack_timer > 0.0:
-		sprite = ghost_attack_sprite; frame_count = 12; frame_index = clampi(int(floor(ghost_attack_elapsed / 0.92 * frame_count)), 0, frame_count - 1); ghost_x = clampf(player_screen_x - 280.0 + ghost_attack_elapsed * 180.0, 120.0, 600.0); ghost_origin = Vector2(ghost_x, FLOOR_Y - 22.0); ghost_scale = 1.56
+		sprite = ghost_attack_sprite; frame_count = 12; frame_index = clampi(int(floor(ghost_attack_elapsed / 0.92 * frame_count)), 0, frame_count - 1); ghost_x = clampf(player_screen_x + 330.0, 780.0, 1120.0); ghost_origin = Vector2(ghost_x, FLOOR_Y - 22.0); ghost_scale = 1.62
+	elif ghost_attack_phase_started:
+		sprite = ghost_float_left_sprite; frame_count = 8; frame_index = int(floor(background_time / _music_beat() * 5.0)) % frame_count; ghost_x = clampf(player_screen_x + 330.0, 780.0, 1120.0); ghost_origin = Vector2(ghost_x, FLOOR_Y - 24.0); ghost_scale = 1.62
 	draw_circle(ghost_origin + Vector2(0.0, -110.0), 128.0 + _beat_pulse() * 16.0, Color(0.72, 0.54, 0.95, 0.10))
 	_draw_ghost_sprite(sprite, ghost_origin, ghost_scale, frame_index, Color(1.0, 1.0, 1.0, 0.98))
+	if ghost_wave_active:
+		var wave_x := ghost_wave_x
+		for i in range(7):
+			var y := 150.0 + i * 62.0
+			draw_line(Vector2(wave_x, y), Vector2(wave_x - 34.0, y + 30.0), Color(1.0, 0.68, 0.86, 0.72), 6.0)
+			draw_line(Vector2(wave_x - 34.0, y + 30.0), Vector2(wave_x, y + 60.0), Color(0.74, 0.55, 1.0, 0.72), 6.0)
 
 func _draw_ghost_sprite(sprite: Texture2D, origin: Vector2, scale: float, frame_index: int, tint: Color) -> void:
 	if sprite == null: return
@@ -1226,7 +1256,7 @@ func _draw_checkpoint_marker() -> void:
 	draw_string(ThemeDB.fallback_font, Vector2(marker_x - 55, FLOOR_Y - 134), "CHECKPOINT %02d" % checkpoint_index, HORIZONTAL_ALIGNMENT_CENTER, 110, 13, Color(0.75, 1.0, 0.86, glow + 0.15))
 
 func _draw_object(object: Dictionary) -> void:
-	var kind: String = object["type"]; var rect := _object_rect(object); rect.position.x -= camera_x; var center := rect.get_center(); var slam_floor := FLOOR_Y + (slam_offset if chase_started else 0.0)
+	var kind: String = object["type"]; var rect := _object_rect(object); rect.position.x -= camera_x; var center := rect.get_center(); var slam_floor := FLOOR_Y + (slam_offset if chase_started else 0.0) + float(ghost_wave_offsets.get(object["id"], {}).get("offset", 0.0))
 	match kind:
 		"spike":
 			draw_colored_polygon(PackedVector2Array([Vector2(rect.position.x, slam_floor), Vector2(center.x, rect.position.y), Vector2(rect.end.x, slam_floor)]), Color("#ed496f"))
@@ -1254,8 +1284,6 @@ func _draw_hud() -> void:
 	if quiz_streak > 0: draw_string(ThemeDB.fallback_font, Vector2(470, 52), "QUIZ STREAK x%d" % quiz_streak, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#a8ffd0"))
 	if audio_resync_time > 0.0: draw_string(ThemeDB.fallback_font, Vector2(0, 145), "RESYNCING BEAT %.1f" % audio_resync_time, HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 19, Color("#a8ffd0"))
 	if message_time > 0.0: draw_string(ThemeDB.fallback_font, Vector2(VIEW.x / 2 - 200, 145), message, HORIZONTAL_ALIGNMENT_CENTER, 400, 22, Color("#ffffff"))
-	if ghost_attack_timer > 0.0:
-		var dash_rect := Rect2(470, 176, 340, 72); draw_rect(dash_rect, Color(0.56, 0.12, 0.35, 0.92)); draw_rect(dash_rect, Color("#ffb6c9"), false, 4.0); draw_string(ThemeDB.fallback_font, dash_rect.position + Vector2(0, 48), "DASH", HORIZONTAL_ALIGNMENT_CENTER, dash_rect.size.x, 38, Color("#ffffff"))
 	if ghost_final_started:
 		var final_rect := Rect2(390, 176, 500, 72); draw_rect(final_rect, Color(0.35, 0.16, 0.48, 0.94)); draw_rect(final_rect, Color("#f5e27e"), false, 4.0); draw_string(ThemeDB.fallback_font, final_rect.position + Vector2(0, 48), "DASH THE GHOST!", HORIZONTAL_ALIGNMENT_CENTER, final_rect.size.x, 34, Color("#ffffff"))
 	if crash_timer > 0.0: draw_string(ThemeDB.fallback_font, Vector2(0, 188), "%s  •  TAP / SPACE TO RETRY NOW" % crash_reason, HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 18, Color("#ffb6c9"))
