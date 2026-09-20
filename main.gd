@@ -412,9 +412,9 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		if not started and event.keycode == KEY_S:
 			shop_open = true; return
-		if not started and (event.keycode == KEY_MINUS or event.keycode == KEY_LEFT_BRACKET):
+		if not started and event.keycode == KEY_MINUS:
 			selected_times_table = max(2, selected_times_table - 1); _save_progress(); return
-		if not started and (event.keycode == KEY_EQUAL or event.keycode == KEY_RIGHT_BRACKET):
+		if not started and event.keycode == KEY_EQUAL:
 			selected_times_table = min(12, selected_times_table + 1); _save_progress(); return
 		if not started and (event.keycode == KEY_LEFT or event.keycode == KEY_UP):
 			selected_level_index = max(0, selected_level_index - 1); return
