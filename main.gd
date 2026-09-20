@@ -100,6 +100,10 @@ var ghost_float_left_sprite: Texture2D
 var ghost_attack_sprite: Texture2D
 var ghost_idle_sprite: Texture2D
 var ghost_death_sprite: Texture2D
+var zombie_walk_sprite: Texture2D
+var zombie_idle_sprite: Texture2D
+var zombie_attack_sprite: Texture2D
+var zombie_death_sprite: Texture2D
 var music_started := false
 var gravity_sign := 1.0
 var gravity_until := 0.0
@@ -170,6 +174,10 @@ func _ready() -> void:
 	ghost_attack_sprite = load("res://assets/ghost-attack-spritesheet.png") as Texture2D
 	ghost_idle_sprite = load("res://assets/ghost-idle3-spritesheet.png") as Texture2D
 	ghost_death_sprite = load("res://assets/ghost-death-spritesheet.png") as Texture2D
+	zombie_walk_sprite = load("res://assets/zombievillager-walk-spritesheet.png") as Texture2D
+	zombie_idle_sprite = load("res://assets/zombievillager-idle-spritesheet.png") as Texture2D
+	zombie_attack_sprite = load("res://assets/zombievillager-attack-spritesheet.png") as Texture2D
+	zombie_death_sprite = load("res://assets/zombievillager-death-spritesheet.png") as Texture2D
 	ghost_woosh_player = AudioStreamPlayer.new()
 	ghost_woosh_player.stream = load("res://assets/air_move.wav") as AudioStream
 	ghost_woosh_player.volume_db = -3.0
@@ -1242,17 +1250,37 @@ func _draw_zombie_chaser() -> void:
 	var slime_y := FLOOR_Y - 42.0
 	var mode := "walk"
 	var progress := 0.0
+	var sprite: Texture2D = zombie_walk_sprite
+	var frame_count := 8
+	var cell_size := 437.0
+	var flip_h := true
 	if slime_death_timer > 0.0:
-		mode = "death"; progress = 1.0 - slime_death_timer / 1.7; slime_x = clampf(player_screen_x + 160.0, 760.0, 1120.0); slime_y = FLOOR_Y - 50.0
+		mode = "death"; progress = 1.0 - slime_death_timer / 1.7; sprite = zombie_death_sprite; frame_count = 12; cell_size = 501.0; flip_h = false; slime_x = clampf(player_screen_x + 160.0, 760.0, 1120.0); slime_y = FLOOR_Y - 50.0
 	elif slime_attack_phase_started:
 		slime_x = clampf(player_screen_x + 500.0, 980.0, 1180.0); slime_y = FLOOR_Y - 46.0
-		if slime_attack_timer > 0.0: mode = "attack"; progress = slime_attack_elapsed / 1.05
-		else: mode = "idle"
+		if slime_attack_timer > 0.0: mode = "attack"; progress = slime_attack_elapsed / 1.05; sprite = zombie_attack_sprite; frame_count = 4; cell_size = 421.0
+		else: mode = "idle"; sprite = zombie_idle_sprite; frame_count = 4; cell_size = 408.0
 	var bob := sin(slime_walk_time * 7.0) * 4.0 if mode == "walk" else 0.0
-	var scale := 1.0 if mode == "walk" else 1.08
-	if mode == "attack": scale = 1.16
+	var scale := 0.78 if mode == "walk" else 0.82
+	if mode == "attack": scale = 0.88
 	draw_circle(Vector2(slime_x, slime_y - 56.0 + bob), 82.0 + _beat_pulse() * 10.0, Color(0.36, 1.0, 0.72, 0.10))
-	_draw_procedural_zombie(Vector2(slime_x, slime_y + bob), scale, mode, progress)
+	var frame_index := 0
+	if mode == "walk": frame_index = int(floor(background_time / _music_beat() * 2.0)) % frame_count
+	elif mode == "idle": frame_index = int(floor(background_time / _music_beat() * 2.0)) % frame_count
+	elif mode == "attack": frame_index = clampi(int(floor(progress * frame_count)), 0, frame_count - 1)
+	elif mode == "death": frame_index = clampi(int(floor(progress * frame_count)), 0, frame_count - 1)
+	if sprite != null:
+		_draw_zombie_sprite(sprite, Vector2(slime_x, slime_y + bob), scale, frame_index, frame_count, cell_size, flip_h, Color(1.0, 1.0, 1.0, 0.98))
+	else:
+		_draw_procedural_zombie(Vector2(slime_x, slime_y + bob), scale, mode, progress)
+
+func _draw_zombie_sprite(sprite: Texture2D, origin: Vector2, scale: float, frame_index: int, frame_count: int, cell_size: float, flip_h: bool, tint: Color) -> void:
+	if sprite == null: return
+	var source := Rect2(Vector2(float(frame_index % 4) * cell_size, float(int(frame_index / 4)) * cell_size), Vector2(cell_size, cell_size))
+	var signed_scale := -scale if flip_h else scale
+	draw_set_transform(origin, 0.0, Vector2(signed_scale, scale))
+	draw_texture_rect_region(sprite, Rect2(Vector2(-cell_size * 0.5, -cell_size * 0.82), Vector2(cell_size, cell_size)), source, tint)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 func _draw_procedural_zombie(origin: Vector2, scale: float, mode: String, progress: float) -> void:
 	# Stable drawn fallback for the supplied walk/idle/attack/death reference set.
