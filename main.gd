@@ -1007,15 +1007,6 @@ func _draw_background_details(fill_size: Vector2, pulse: float) -> void:
 		draw_line(Vector2(candy_x - 11.0, candy_y), Vector2(candy_x + 11.0, candy_y), Color(0.70, 0.92, 1.0, 0.22), 4.0)
 
 func _draw_metro_background(pulse: float, fill_size: Vector2) -> void:
-	var train_y: float = 250.0 + sin(background_time * 0.9) * 8.0
-	var train_x: float = fmod(980.0 - background_time * 80.0 - camera_x * 0.18, 1500.0) - 220.0
-	draw_rect(Rect2(train_x, train_y, 430.0, 120.0), Color(0.12, 0.28, 0.48, 0.9))
-	draw_rect(Rect2(train_x + 18.0, train_y + 18.0, 394.0, 42.0), Color("#7cf5ff"))
-	for i in range(5):
-		var window_rect: Rect2 = Rect2(train_x + 28.0 + i * 76.0, train_y + 26.0, 54.0, 26.0)
-		draw_rect(window_rect, Color("#17244c"))
-		draw_circle(window_rect.position + Vector2(18.0, 13.0), 5.0 + pulse * 2.0, Color("#ffd8ed"))
-	draw_line(Vector2(train_x + 25.0, train_y + 92.0), Vector2(train_x + 405.0, train_y + 92.0), Color("#ff9dbc"), 7.0)
 	for i in range(8):
 		var light_x: float = fmod(i * 190.0 - camera_x * 0.35 + background_time * 160.0, 1500.0) - 80.0
 		draw_line(Vector2(light_x, 120.0 + (i % 3) * 58.0), Vector2(light_x + 45.0, 120.0 + (i % 3) * 58.0), Color(0.49, 0.96, 1.0, 0.26 + pulse * 0.18), 5.0)
@@ -1048,11 +1039,7 @@ func _draw_chaser() -> void:
 	if slam_timer > 0.0: _draw_slam_effect(chaser_x)
 
 func _draw_ghost_chaser() -> void:
-	if not chase_started:
-		var preview_x := 1000.0 + sin(background_time * 0.7) * 42.0
-		draw_circle(Vector2(preview_x, 300.0), 138.0 + _beat_pulse() * 12.0, Color(0.72, 0.54, 0.95, 0.12))
-		_draw_ghost_sprite(ghost_float_sprite, Vector2(preview_x, 480.0), 0.88, int(floor(background_time / _music_beat() * 5.0)) % 8, Color(1.0, 1.0, 1.0, 0.68))
-		return
+	if not chase_started: return
 	var player_screen_x := player.x - camera_x
 	var ghost_x := clampf(player_screen_x - 245.0, 120.0, 520.0)
 	var ghost_origin := Vector2(ghost_x, FLOOR_Y - 24.0)
@@ -1061,11 +1048,11 @@ func _draw_ghost_chaser() -> void:
 	var frame_index := int(floor(background_time / _music_beat() * 5.0)) % frame_count
 	var ghost_scale := 1.62
 	if ghost_death_timer > 0.0:
-		sprite = ghost_death_sprite; frame_count = 12; frame_index = clampi(int(floor((1.25 - ghost_death_timer) / 1.25 * frame_count)), 0, frame_count - 1); ghost_scale = 1.52
+		sprite = ghost_death_sprite; frame_count = 12; frame_index = clampi(int(floor((1.25 - ghost_death_timer) / 1.25 * frame_count)), 0, frame_count - 1); ghost_x = clampf(player_screen_x + 190.0, 610.0, 1030.0); ghost_origin = Vector2(ghost_x, FLOOR_Y - 28.0); ghost_scale = 1.52
 	elif ghost_final_started:
 		sprite = ghost_idle_sprite; frame_count = 8; frame_index = int(floor(background_time / _music_beat() * 4.0)) % frame_count; ghost_x = clampf(player_screen_x + 190.0, 610.0, 1030.0); ghost_origin = Vector2(ghost_x, FLOOR_Y - 28.0); ghost_scale = 1.48
 	elif ghost_attack_timer > 0.0:
-		sprite = ghost_attack_sprite; frame_count = 12; frame_index = clampi(int(floor(ghost_attack_elapsed / 0.92 * frame_count)), 0, frame_count - 1); ghost_x = clampf(player_screen_x - 240.0 + ghost_attack_elapsed * 240.0, 120.0, 680.0); ghost_origin = Vector2(ghost_x, FLOOR_Y - 22.0); ghost_scale = 1.56
+		sprite = ghost_attack_sprite; frame_count = 12; frame_index = clampi(int(floor(ghost_attack_elapsed / 0.92 * frame_count)), 0, frame_count - 1); ghost_x = clampf(player_screen_x - 280.0 + ghost_attack_elapsed * 180.0, 120.0, 600.0); ghost_origin = Vector2(ghost_x, FLOOR_Y - 22.0); ghost_scale = 1.56
 	draw_circle(ghost_origin + Vector2(0.0, -110.0), 128.0 + _beat_pulse() * 16.0, Color(0.72, 0.54, 0.95, 0.10))
 	_draw_ghost_sprite(sprite, ghost_origin, ghost_scale, frame_index, Color(1.0, 1.0, 1.0, 0.98))
 
