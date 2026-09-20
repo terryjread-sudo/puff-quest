@@ -10,7 +10,7 @@ const GRAVITY := 1900.0
 const JUMP_VELOCITY := -720.0
 const DASH_SPEED := 920.0
 const DASH_TIME := 0.20
-const PALETTE := ["block", "spike", "catapult", "timetable", "bounce_pad", "moving_platform", "gravity_portal", "speed_ring", "star", "checkpoint"]
+const PALETTE := ["block", "spike", "catapult", "timetable", "bounce_pad", "platform", "moving_platform", "gravity_portal", "speed_ring", "star", "checkpoint"]
 const LEVEL_COUNT := 3
 const BEAT_FLASH_STRENGTH := 0.055
 const INTRO_CLEAR_SECONDS := 6.0
@@ -57,6 +57,7 @@ var quiz_active := false
 var quiz_time := 0.0
 var quiz_number := 0
 var quiz_table := 2
+var selected_times_table := 2
 var quiz_choices: Array[int] = []
 var quiz_correct_index := 0
 var quiz_points := 0
@@ -91,6 +92,8 @@ var selected_palette := 0
 var rng := RandomNumberGenerator.new()
 var music_player: AudioStreamPlayer
 var ghost_woosh_player: AudioStreamPlayer
+var slime_voice_player: AudioStreamPlayer
+var slime_attack_player: AudioStreamPlayer
 var skeleton_sprite: Texture2D
 var ghost_float_sprite: Texture2D
 var ghost_float_left_sprite: Texture2D
@@ -103,6 +106,7 @@ var gravity_until := 0.0
 var catapult_state: Dictionary = {}
 var catapult_boost_left := 0.0
 var speed_until := 0.0
+var speed_boost_multiplier := 1.0
 var crash_timer := 0.0
 var checkpoint_flash := 0.0
 var crash_reason := ""
@@ -130,6 +134,16 @@ var ghost_final_resolved := false
 var ghost_defeated_pending := false
 var ghost_end_death_started := false
 var ghost_death_timer := 0.0
+var slime_walk_time := 0.0
+var slime_attack_timer := 0.0
+var slime_attack_elapsed := 0.0
+var slime_attack_resolved := false
+var slime_attack_next_beat := -1.0
+var slime_attack_phase_started := false
+var slime_attack_visible := true
+var slime_attack_cooldown := 0.0
+var slime_end_death_started := false
+var slime_death_timer := 0.0
 var music_last_position := 0.0
 var music_expected_playing := false
 var audio_resync_time := 0.0
@@ -160,6 +174,15 @@ func _ready() -> void:
 	ghost_woosh_player.stream = load("res://assets/air_move.wav") as AudioStream
 	ghost_woosh_player.volume_db = -3.0
 	add_child(ghost_woosh_player)
+	slime_voice_player = AudioStreamPlayer.new()
+	slime_voice_player.stream = load("res://assets/slime-chase-voice.mp3") as AudioStream
+	slime_voice_player.volume_db = -10.0
+	slime_voice_player.max_polyphony = 1
+	add_child(slime_voice_player)
+	slime_attack_player = AudioStreamPlayer.new()
+	slime_attack_player.stream = load("res://assets/slime-attack.wav") as AudioStream
+	slime_attack_player.volume_db = -4.0
+	add_child(slime_attack_player)
 	queue_redraw()
 
 func _apply_level(data: Dictionary) -> void:
@@ -169,9 +192,10 @@ func _apply_level(data: Dictionary) -> void:
 	triggers = level["triggers"]
 	runtime_objects.clear()
 	consumed.clear(); triggered.clear(); catapult_state.clear()
-	gravity_sign = 1.0; gravity_until = 0.0
+	gravity_sign = 1.0; gravity_until = 0.0; speed_boost_multiplier = 1.0
 	chase_started = false; chase_flash = 0.0; slam_next_beat = -1.0; slam_offset = 0.0; slam_velocity = 0.0; slam_timer = 0.0; slam_flash = 0.0
 	ghost_attack_timer = 0.0; ghost_attack_elapsed = 0.0; ghost_attack_next_beat = -1.0; ghost_attack_phase_started = false; ghost_attack_resolved = false; ghost_attack_dodged = false; ghost_wave_active = false; ghost_wave_x = -1.0; ghost_wave_previous_x = -1.0; ghost_wave_offsets.clear(); ghost_final_started = false; ghost_final_timer = 0.0; ghost_final_resolved = false; ghost_defeated_pending = false; ghost_end_death_started = false; ghost_death_timer = 0.0
+	slime_walk_time = 0.0; slime_attack_timer = 0.0; slime_attack_elapsed = 0.0; slime_attack_resolved = false; slime_attack_next_beat = -1.0; slime_attack_phase_started = false; slime_attack_visible = true; slime_attack_cooldown = 0.0; slime_end_death_started = false; slime_death_timer = 0.0
 	checkpoint_beats = [0.0]
 	for object in objects:
 		if object["type"] == "checkpoint": checkpoint_beats.append(float(object["beat"]))
@@ -253,6 +277,9 @@ func _process(delta: float) -> void:
 	slam_timer = max(0.0, slam_timer - dt)
 	slam_flash = max(0.0, slam_flash - dt)
 	ghost_death_timer = max(0.0, ghost_death_timer - dt)
+	slime_death_timer = max(0.0, slime_death_timer - dt)
+	slime_attack_cooldown = max(0.0, slime_attack_cooldown - dt)
+	slime_walk_time += dt
 	if slam_offset != 0.0 or slam_velocity != 0.0:
 		slam_velocity += GRAVITY * dt
 		slam_offset += slam_velocity * dt
@@ -282,9 +309,9 @@ func _process(delta: float) -> void:
 
 func _run_step(delta: float) -> void:
 	run_time += delta
-	if ghost_end_death_started:
+	if ghost_end_death_started or slime_end_death_started:
 		velocity = Vector2.ZERO
-		if ghost_death_timer <= 0.0: _finish()
+		if (ghost_end_death_started and ghost_death_timer <= 0.0) or (slime_end_death_started and slime_death_timer <= 0.0): _finish()
 		return
 	var in_intro: bool = intro_time_left > 0.0
 	intro_time_left = max(0.0, intro_time_left - delta)
@@ -315,7 +342,7 @@ func _run_step(delta: float) -> void:
 	if gravity_sign > 0.0 and player.y + PLAYER_SIZE.y >= FLOOR_Y: player.y = FLOOR_Y - PLAYER_SIZE.y; velocity.y = 0.0
 	if gravity_sign < 0.0 and player.y <= 90.0: player.y = 90.0; velocity.y = 0.0
 	for platform in objects:
-		if platform["type"] != "moving_platform": continue
+		if platform["type"] != "moving_platform" and platform["type"] != "platform": continue
 		var platform_rect := _object_rect(platform)
 		if velocity.y >= 0.0 and Rect2(player, PLAYER_SIZE).intersects(platform_rect) and player.y + PLAYER_SIZE.y - platform_rect.position.y < 24.0:
 			player.y = platform_rect.position.y - PLAYER_SIZE.y
@@ -326,6 +353,7 @@ func _run_step(delta: float) -> void:
 		return
 	if _chase_active() and not chase_started: _start_chase()
 	_update_ghost_encounter(delta)
+	_update_slime_encounter(delta)
 	_update_objects()
 	if intro_time_left <= 0.0:
 		_check_objects(); _check_triggers()
@@ -333,7 +361,9 @@ func _run_step(delta: float) -> void:
 	for i in range(checkpoint_beats.size()):
 		if player.x >= START_X + checkpoint_beats[i] * _beat_width(): checkpoint_index = i
 	if player.x >= START_X + float(level["length_beats"]) * _beat_width():
-		if ghost_defeated_pending and not ghost_end_death_started:
+		if str(level.get("theme", "")) == "slime" and not slime_end_death_started:
+			slime_end_death_started = true; slime_death_timer = 1.7; message = "SLIME DEFEATED"; message_time = 1.7
+		elif ghost_defeated_pending and not ghost_end_death_started:
 			ghost_end_death_started = true; ghost_death_timer = 1.25; message = "FINAL STRIKE"; message_time = 1.25
 		elif not ghost_end_death_started: _finish()
 	camera_x = clamp(player.x - 250.0, 0.0, START_X + float(level["length_beats"]) * _beat_width() - VIEW.x)
@@ -382,6 +412,10 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		if not started and event.keycode == KEY_S:
 			shop_open = true; return
+		if not started and (event.keycode == KEY_MINUS or event.keycode == KEY_LEFT_BRACKET):
+			selected_times_table = max(2, selected_times_table - 1); _save_progress(); return
+		if not started and (event.keycode == KEY_EQUAL or event.keycode == KEY_RIGHT_BRACKET):
+			selected_times_table = min(12, selected_times_table + 1); _save_progress(); return
 		if not started and (event.keycode == KEY_LEFT or event.keycode == KEY_UP):
 			selected_level_index = max(0, selected_level_index - 1); return
 		if not started and (event.keycode == KEY_RIGHT or event.keycode == KEY_DOWN):
@@ -417,6 +451,8 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed:
 		if not started:
 			if _shop_button_hit(event.position): shop_open = true; return
+			if _times_table_minus_rect().has_point(event.position): selected_times_table = max(2, selected_times_table - 1); _save_progress(); return
+			if _times_table_plus_rect().has_point(event.position): selected_times_table = min(12, selected_times_table + 1); _save_progress(); return
 			var level_choice: int = _level_choice_at(event.position)
 			if level_choice >= 0: _choose_level(level_choice)
 			else: _start_run()
@@ -425,6 +461,8 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch and event.pressed:
 		if not started:
 			if _shop_button_hit(event.position): shop_open = true; return
+			if _times_table_minus_rect().has_point(event.position): selected_times_table = max(2, selected_times_table - 1); _save_progress(); return
+			if _times_table_plus_rect().has_point(event.position): selected_times_table = min(12, selected_times_table + 1); _save_progress(); return
 			var level_touch_choice: int = _level_choice_at(event.position)
 			if level_touch_choice >= 0: _choose_level(level_touch_choice)
 			else: _start_run()
@@ -487,10 +525,11 @@ func _load_progress() -> void:
 	if not owned_skins.has("classic"): owned_skins.push_front("classic")
 	var saved_equipped := str(parsed.get("equipped_skin", "classic"))
 	equipped_skin = saved_equipped if owned_skins.has(saved_equipped) else "classic"
+	selected_times_table = clampi(int(parsed.get("times_table", 2)), 2, 12)
 
 func _save_progress() -> void:
 	if not OS.has_feature("web"): return
-	var payload: String = JSON.stringify({"unlocked_level": unlocked_level, "best_scores": best_scores, "diamonds": diamonds, "owned_skins": owned_skins, "equipped_skin": equipped_skin})
+	var payload: String = JSON.stringify({"unlocked_level": unlocked_level, "best_scores": best_scores, "diamonds": diamonds, "owned_skins": owned_skins, "equipped_skin": equipped_skin, "times_table": selected_times_table})
 	JavaScriptBridge.eval("localStorage.setItem('neon_twice_progress', %s)" % JSON.stringify(payload))
 
 func _skin_by_id(skin_id: String) -> Dictionary:
@@ -513,6 +552,12 @@ func _shop_button_hit(pos: Vector2) -> bool:
 	var screen_rect := _shop_button_rect()
 	var logical_rect := Rect2(VIEW.x - SHOP_BUTTON_SIZE.x - 55.0, 28.0, SHOP_BUTTON_SIZE.x, SHOP_BUTTON_SIZE.y)
 	return screen_rect.grow(16.0).has_point(pos) or logical_rect.grow(16.0).has_point(pos)
+
+func _times_table_minus_rect() -> Rect2:
+	return Rect2(420.0, 108.0, 56.0, 48.0)
+
+func _times_table_plus_rect() -> Rect2:
+	return Rect2(804.0, 108.0, 56.0, 48.0)
 
 func _finish_menu_rect() -> Rect2:
 	return Rect2((VIEW.x - 320.0) * 0.5, 535.0, 320.0, 60.0)
@@ -677,6 +722,7 @@ func _default_properties(kind: String) -> Dictionary:
 		"catapult": return {"delay_beats": 1.0, "launch_beats": 2.0}
 		"bounce_pad": return {"strength": 1.0}
 		"moving_platform": return {"travel_beats": 4.0, "distance_lanes": 2.0}
+		"platform": return {"width": 2.0, "height": 0.25}
 		"gravity_portal": return {"duration_beats": 8.0}
 		"speed_ring": return {"multiplier": 1.25, "duration_beats": 4.0}
 	return {}
@@ -716,7 +762,7 @@ func _update_objects() -> void:
 			gravity_sign = -1.0; gravity_until = run_time + float(object["properties"].get("duration_beats", 8.0)) * _music_beat(); consumed[id] = true
 
 func _speed_multiplier() -> float:
-	if run_time < speed_until: return 1.25
+	if run_time < speed_until: return speed_boost_multiplier
 	return 1.0
 
 func _chase_active() -> bool:
@@ -727,6 +773,9 @@ func _start_chase() -> void:
 	if str(level.get("theme", "")) == "metro":
 		_start_ghost_chase()
 		return
+	if str(level.get("theme", "")) == "slime":
+		_start_slime_chase()
+		return
 	chase_started = true; chase_flash = 1.2; message = "THE CARNIVAL IS CHASING YOU"; message_time = 1.5
 	var chase_beat: float = float(level.get("chase_beat", 92.0))
 	slam_next_beat = chase_beat + SLAM_INTERVAL_BEATS
@@ -734,6 +783,36 @@ func _start_chase() -> void:
 func _start_ghost_chase() -> void:
 	chase_started = true; chase_flash = 1.2; ghost_attack_next_beat = -1.0; ghost_attack_phase_started = false; ghost_attack_timer = 0.0; ghost_attack_elapsed = 0.0; ghost_attack_resolved = false; ghost_wave_active = false; ghost_wave_x = -1.0; ghost_wave_previous_x = -1.0; ghost_wave_offsets.clear(); ghost_final_started = false; ghost_final_timer = 0.0; ghost_final_resolved = false; ghost_death_timer = 0.0
 	message = "A GHOST IS HUNTING YOU"; message_time = 1.5
+
+func _start_slime_chase() -> void:
+	chase_started = true; chase_flash = 1.2; slime_attack_next_beat = float(level.get("length_beats", 210.0)) * 0.5 + 8.0; slime_attack_phase_started = false; slime_attack_timer = 0.0; slime_attack_elapsed = 0.0; slime_attack_visible = true; slime_attack_cooldown = 0.0; slime_end_death_started = false; slime_death_timer = 0.0
+	if slime_voice_player != null and slime_voice_player.stream != null:
+		if slime_voice_player.stream is AudioStreamMP3: (slime_voice_player.stream as AudioStreamMP3).loop = true
+		slime_voice_player.play()
+	message = "A SLIME IS SLIMING AFTER YOU"; message_time = 1.5
+
+func _update_slime_encounter(delta: float) -> void:
+	if str(level.get("theme", "")) != "slime" or not chase_started: return
+	if slime_voice_player != null and slime_voice_player.stream != null and not slime_voice_player.playing and not slime_end_death_started:
+		slime_voice_player.play()
+	if slime_attack_timer > 0.0:
+		slime_attack_timer -= delta; slime_attack_elapsed += delta
+		if slime_attack_elapsed > 0.42 and slime_attack_elapsed < 0.70 and not slime_attack_resolved:
+			slime_attack_resolved = true
+			# Platforms are the intended escape route: a player above the floor is safe.
+			if player.y + PLAYER_SIZE.y > FLOOR_Y - 92.0: _take_hit("SLIME SPLAT")
+		if slime_attack_timer <= 0.0:
+			slime_attack_visible = false; slime_attack_cooldown = _music_beat() * 5.0
+		return
+	if slime_attack_cooldown > 0.0:
+		return
+	var attack_start_beat := float(level.get("length_beats", 210.0)) * 0.5
+	if not slime_attack_phase_started and player.x >= START_X + attack_start_beat * _beat_width():
+		slime_attack_phase_started = true; slime_attack_next_beat = attack_start_beat + 8.0; slime_attack_visible = true; message = "THE SLIME TURNS BACK! USE THE PLATFORMS"; message_time = 1.7
+	if slime_attack_phase_started and slime_attack_next_beat >= 0.0 and player.x >= START_X + slime_attack_next_beat * _beat_width():
+		slime_attack_timer = 1.05; slime_attack_elapsed = 0.0; slime_attack_resolved = false; slime_attack_visible = true; slime_attack_next_beat += 20.0
+		if slime_attack_player != null and slime_attack_player.stream != null: slime_attack_player.play()
+		message = "SLIME ATTACK!"; message_time = 0.8
 
 func _update_ghost_encounter(delta: float) -> void:
 	if str(level.get("theme", "")) != "metro" or not chase_started: return
@@ -806,7 +885,7 @@ func _check_objects() -> void:
 			"catapult":
 				catapult_boost_left = float(object["properties"].get("launch_beats", 2.0)) * _music_beat(); velocity.x = DASH_SPEED; velocity.y = JUMP_VELOCITY * 1.15; consumed[id] = true; _combo_event("CATAPULT"); _spawn_skin_burst(rect.position + rect.size * 0.5, 12); message = "CATAPULT! UP + FORWARD"; message_time = 1.0
 			"bounce_pad": velocity.y = JUMP_VELOCITY * float(object["properties"].get("strength", 1.0)); consumed[id] = true; _combo_event("BOUNCE")
-			"speed_ring": score += 75; consumed[id] = true; speed_until = run_time + float(object["properties"].get("duration_beats", 4.0)) * _music_beat(); _combo_event("SPEED UP"); _spawn_burst(rect.position + rect.size * 0.5, Color("#f5e27e"), 10)
+			"speed_ring": score += 75; consumed[id] = true; speed_boost_multiplier = float(object["properties"].get("multiplier", 1.25)); speed_until = run_time + float(object["properties"].get("duration_beats", 4.0)) * _music_beat(); _combo_event("SPEED UP"); message = "SPEED RING • x%.2f" % speed_boost_multiplier; message_time = 1.0; _spawn_burst(rect.position + rect.size * 0.5, Color("#f5e27e"), 18)
 			"star": score += 75; diamonds += 1; run_diamonds_earned += 1; run_stars_collected += 1; consumed[id] = true; _combo_event("COLLECT"); _spawn_burst(rect.position + rect.size * 0.5, Color("#f5e27e"), 10); _save_progress()
 			"checkpoint": checkpoint_index = max(checkpoint_index, checkpoint_beats.find(float(object["beat"])))
 
@@ -817,7 +896,7 @@ func _check_triggers() -> void:
 
 func _start_quiz(trigger: Dictionary) -> void:
 	quiz_snapshot = {"player": player, "velocity": velocity, "camera_x": camera_x, "run_time": run_time, "gravity_sign": gravity_sign, "gravity_until": gravity_until, "speed_until": speed_until, "catapult_boost_left": catapult_boost_left, "music_position": music_player.get_playback_position() if music_player != null else 0.0}
-	quiz_active = true; quiz_input_lock = 0.18; quiz_feedback_time = 0.0; quiz_time = 10.0; quiz_table = int(trigger.get("table", 2)); quiz_number = rng.randi_range(1, 12)
+	quiz_active = true; quiz_input_lock = 0.18; quiz_feedback_time = 0.0; quiz_time = 10.0; quiz_table = selected_times_table; quiz_number = rng.randi_range(1, 12)
 	var correct: int = quiz_number * quiz_table; quiz_choices = [correct, correct + rng.randi_range(1, 3), max(2, correct - rng.randi_range(1, 3))]; quiz_choices.shuffle(); quiz_correct_index = quiz_choices.find(correct); message = "TIME SHIFT"; message_time = 1.0
 
 func _answer_quiz(choice: int) -> void:
@@ -863,7 +942,7 @@ func _crash(reason: String) -> void:
 
 func _respawn_at_checkpoint() -> void:
 	player = Vector2(START_X + checkpoint_beats[checkpoint_index] * _beat_width(), FLOOR_Y - PLAYER_SIZE.y)
-	velocity = Vector2.ZERO; dash_left = 0.0; dash_cooldown = 0.0; gravity_sign = 1.0; gravity_until = 0.0; speed_until = 0.0; catapult_boost_left = 0.0; quiz_active = false; quiz_feedback_time = 0.0; consumed.clear(); triggered.clear(); catapult_state.clear(); runtime_objects.clear(); invulnerability = 0.55; checkpoint_flash = 1.5; slam_offset = 0.0; slam_velocity = 0.0; slam_timer = 0.0
+	velocity = Vector2.ZERO; dash_left = 0.0; dash_cooldown = 0.0; gravity_sign = 1.0; gravity_until = 0.0; speed_until = 0.0; speed_boost_multiplier = 1.0; catapult_boost_left = 0.0; quiz_active = false; quiz_feedback_time = 0.0; consumed.clear(); triggered.clear(); catapult_state.clear(); runtime_objects.clear(); invulnerability = 0.55; checkpoint_flash = 1.5; slam_offset = 0.0; slam_velocity = 0.0; slam_timer = 0.0
 	for trigger in triggers:
 		if float(trigger["beat"]) < checkpoint_beats[checkpoint_index]: triggered[trigger["id"]] = true
 	if _chase_active(): _start_chase()
@@ -886,7 +965,7 @@ func _is_grounded() -> bool:
 	if gravity_sign < 0.0: return false
 	if player.y + PLAYER_SIZE.y >= FLOOR_Y - 1.0: return true
 	for platform in objects:
-		if platform["type"] == "moving_platform":
+		if platform["type"] == "moving_platform" or platform["type"] == "platform":
 			var rect := _object_rect(platform)
 			if abs(player.y + PLAYER_SIZE.y - rect.position.y) < 8.0 and player.x + PLAYER_SIZE.x > rect.position.x and player.x < rect.end.x: return true
 	return false
@@ -927,6 +1006,7 @@ func _object_rect(object: Dictionary) -> Rect2:
 		"block": return Rect2(x - 22, FLOOR_Y - 82 * float(object["properties"].get("height", 1.0)) + slam_y, 44, 82 * float(object["properties"].get("height", 1.0)))
 		"catapult", "bounce_pad": return Rect2(x - 32, FLOOR_Y - 28 + slam_y, 64, 28)
 		"moving_platform": return Rect2(x - 45, y - 15 + slam_y, 90, 30)
+		"platform": return Rect2(x - 62, y - 10 + slam_y, 124, 20)
 		"gravity_portal": return Rect2(x - 28, FLOOR_Y - 170 + slam_y, 56, 170)
 		"speed_ring", "star": return Rect2(x - 18, y - 18 + slam_y, 36, 36)
 		"checkpoint": return Rect2(x - 16, FLOOR_Y - 100 + slam_y, 32, 100)
@@ -993,10 +1073,11 @@ func _draw_background() -> void:
 	var base_color: Color = Color("#17143e")
 	if theme == "metro": base_color = Color("#101b38")
 	if theme == "boss": base_color = Color("#24133f")
+	if theme == "slime": base_color = Color("#102d36")
 	draw_rect(Rect2(Vector2.ZERO, fill_size), base_color)
 	var band_count := int(ceil(fill_size.y / 80.0))
-	var band_start: Color = Color("#21194e") if theme == "skeleton" else (Color("#14264b") if theme == "metro" else Color("#32164f"))
-	var band_end: Color = Color("#583070") if theme == "skeleton" else (Color("#254d78") if theme == "metro" else Color("#8d295e"))
+	var band_start: Color = Color("#21194e") if theme == "skeleton" else (Color("#14264b") if theme == "metro" else (Color("#123b40") if theme == "slime" else Color("#32164f")))
+	var band_end: Color = Color("#583070") if theme == "skeleton" else (Color("#254d78") if theme == "metro" else (Color("#25836e") if theme == "slime" else Color("#8d295e")))
 	for band in range(band_count): draw_rect(Rect2(0, band * 80, fill_size.x, 82), band_start.lerp(band_end, min(1.0, float(band) / 9.0)))
 	for x in range(-100, int(fill_size.x) + 1500, 100):
 		var sx := fmod(x - camera_x * 0.15, 1500.0); draw_line(Vector2(sx, 0), Vector2(sx - 260, VIEW.y), Color(0.7, 0.45, 0.95, 0.11), 1.0)
@@ -1006,9 +1087,11 @@ func _draw_background() -> void:
 	match theme:
 		"metro": _draw_metro_background(pulse, fill_size)
 		"boss": _draw_boss_background(pulse, fill_size)
+		"slime": _draw_slime_background(pulse, fill_size)
 		_: _draw_kawaii_bone_carnival(pulse)
 	if theme == "skeleton": _draw_chaser()
 	elif theme == "metro": _draw_ghost_chaser()
+	elif theme == "slime": _draw_slime_chaser()
 	draw_rect(Rect2(Vector2.ZERO, fill_size), Color(0.92, 0.96, 1.0, BEAT_FLASH_STRENGTH * _beat_pulse()))
 
 func _draw_beat_layers(fill_size: Vector2, pulse: float) -> void:
@@ -1066,6 +1149,23 @@ func _draw_boss_background(pulse: float, fill_size: Vector2) -> void:
 		var shard_y: float = 110.0 + fmod(background_time * (14.0 + i % 4) + i * 51.0, 360.0)
 		_draw_sparkle(Vector2(shard_x, shard_y), 4.0 + pulse * 3.0, Color("#f5e27e"))
 
+func _draw_slime_background(pulse: float, fill_size: Vector2) -> void:
+	# A separate candy-lab look for level 3: bubbles, drips and soft liquid waves.
+	for i in range(9):
+		var bubble_x := fmod(80.0 + i * 173.0 - camera_x * 0.12, fill_size.x + 260.0) - 130.0
+		var bubble_y := 150.0 + fmod(i * 71.0 + background_time * (10.0 + i), 310.0)
+		var bubble_r := 12.0 + float(i % 4) * 7.0 + pulse * 3.0
+		draw_circle(Vector2(bubble_x, bubble_y), bubble_r, Color(0.34, 1.0, 0.72, 0.08))
+		draw_arc(Vector2(bubble_x, bubble_y), bubble_r, 0.2, PI * 1.55, 18, Color(0.55, 1.0, 0.86, 0.28), 3.0)
+	for row in range(3):
+		var wave_y := 300.0 + row * 92.0
+		var points := PackedVector2Array()
+		for step in range(13):
+			var px := -40.0 + step * 112.0
+			var py := wave_y + sin(background_time * (1.0 + row * 0.2) + step * 0.9) * (8.0 + pulse * 4.0)
+			points.append(Vector2(px, py))
+		draw_polyline(points, Color(0.40, 1.0, 0.76, 0.10 + row * 0.02), 12.0)
+
 func _draw_chaser() -> void:
 	var chase_mode: bool = _chase_active()
 	var chaser_offset: float = 250.0 if chase_mode else 350.0
@@ -1100,6 +1200,62 @@ func _draw_ghost_chaser() -> void:
 			var y := 150.0 + i * 62.0
 			draw_line(Vector2(wave_x, y), Vector2(wave_x - 34.0, y + 30.0), Color(1.0, 0.68, 0.86, 0.72), 6.0)
 			draw_line(Vector2(wave_x - 34.0, y + 30.0), Vector2(wave_x, y + 60.0), Color(0.74, 0.55, 1.0, 0.72), 6.0)
+
+func _draw_slime_chaser() -> void:
+	if not chase_started or not slime_attack_visible and slime_death_timer <= 0.0: return
+	var player_screen_x := player.x - camera_x
+	var slime_x := clampf(player_screen_x - 290.0, 110.0, 430.0)
+	var slime_y := FLOOR_Y - 42.0
+	var mode := "walk"
+	var progress := 0.0
+	if slime_death_timer > 0.0:
+		mode = "death"; progress = 1.0 - slime_death_timer / 1.7; slime_x = clampf(player_screen_x + 160.0, 760.0, 1120.0); slime_y = FLOOR_Y - 50.0
+	elif slime_attack_phase_started:
+		slime_x = clampf(player_screen_x + 500.0, 980.0, 1180.0); slime_y = FLOOR_Y - 46.0
+		if slime_attack_timer > 0.0: mode = "attack"; progress = slime_attack_elapsed / 1.05
+		else: mode = "idle"
+	var bob := sin(slime_walk_time * 7.0) * 4.0 if mode == "walk" else 0.0
+	var scale := 1.0 if mode == "walk" else 1.08
+	if mode == "attack": scale = 1.16
+	draw_circle(Vector2(slime_x, slime_y - 56.0 + bob), 82.0 + _beat_pulse() * 10.0, Color(0.36, 1.0, 0.72, 0.10))
+	_draw_procedural_slime(Vector2(slime_x, slime_y + bob), scale, mode, progress)
+
+func _draw_procedural_slime(origin: Vector2, scale: float, mode: String, progress: float) -> void:
+	# Deterministic fallback animation: every frame is drawn, so there are no
+	# transparent/missing-frame flashes while the reference animation is unavailable.
+	var stretch := 1.0
+	var squash := 1.0
+	if mode == "walk":
+		stretch = 1.0 + sin(slime_walk_time * 7.0) * 0.07; squash = 1.0 / stretch
+	elif mode == "attack":
+		stretch = 1.0 + sin(clampf(progress, 0.0, 1.0) * PI) * 0.65; squash = 1.0 - sin(clampf(progress, 0.0, 1.0) * PI) * 0.24
+	elif mode == "death":
+		stretch = 1.0 + progress * 0.8; squash = max(0.18, 1.0 - progress * 0.8)
+	var body_size := Vector2(108.0 * scale * stretch, 78.0 * scale * squash)
+	var body_center := origin - Vector2(0.0, body_size.y * 0.5)
+	var body_color := Color("#70f2a0") if mode != "death" else Color("#c8ffe1")
+	var edge_color := Color("#1a8d72") if mode != "death" else Color("#70cfa1")
+	draw_set_transform(body_center, 0.0, Vector2.ONE)
+	draw_circle(Vector2(-body_size.x * 0.27, 0.0), body_size.y * 0.50, body_color)
+	draw_circle(Vector2(body_size.x * 0.27, 0.0), body_size.y * 0.50, body_color)
+	draw_rect(Rect2(-body_size.x * 0.27, -body_size.y * 0.50, body_size.x * 0.54, body_size.y), body_color)
+	draw_arc(Vector2.ZERO, body_size.y * 0.50, PI, TAU, 24, edge_color, 5.0)
+	if mode == "attack":
+		for i in range(3):
+			var arm_x := body_size.x * (0.34 + i * 0.17)
+			draw_line(Vector2(arm_x, -body_size.y * 0.12), Vector2(arm_x + 46.0 * scale, -body_size.y * (0.18 + i * 0.14)), Color("#a8ffd0"), 10.0)
+	var eye_x := body_size.x * 0.18
+	draw_circle(Vector2(-eye_x, -body_size.y * 0.12), 9.0 * scale, Color("#182450"))
+	draw_circle(Vector2(eye_x, -body_size.y * 0.12), 9.0 * scale, Color("#182450"))
+	draw_circle(Vector2(-eye_x + 2, -body_size.y * 0.16), 3.0 * scale, Color.WHITE)
+	draw_circle(Vector2(eye_x + 2, -body_size.y * 0.16), 3.0 * scale, Color.WHITE)
+	draw_arc(Vector2(0.0, body_size.y * 0.04), body_size.x * 0.16, 0.1, PI - 0.1, 16, Color("#182450"), 4.0)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	if mode == "death":
+		for i in range(7):
+			var angle := i * TAU / 7.0 + progress * 2.0
+			var p := origin + Vector2.from_angle(angle) * (28.0 + progress * 95.0)
+			draw_circle(p, max(2.0, 10.0 * (1.0 - progress)), Color(0.44, 1.0, 0.66, 1.0 - progress))
 
 func _draw_ghost_sprite(sprite: Texture2D, origin: Vector2, scale: float, frame_index: int, tint: Color) -> void:
 	if sprite == null: return
@@ -1284,10 +1440,12 @@ func _draw_object(object: Dictionary) -> void:
 			draw_rect(rect, Color("#55d68a")); draw_line(Vector2(rect.position.x + 8, rect.end.y - 6), Vector2(center.x, rect.position.y + 5), Color("#124d46"), 4.0); draw_line(Vector2(rect.end.x - 8, rect.end.y - 6), Vector2(center.x, rect.position.y + 5), Color("#124d46"), 4.0)
 		"moving_platform":
 			draw_rect(rect, Color("#55d68a")); draw_line(Vector2(rect.position.x - 18, center.y), Vector2(rect.position.x - 3, center.y), Color("#a8ffd0"), 3.0); draw_line(Vector2(rect.end.x + 3, center.y), Vector2(rect.end.x + 18, center.y), Color("#a8ffd0"), 3.0)
+		"platform":
+			draw_rect(rect, Color("#55d68a")); draw_rect(rect.grow(-4.0), Color("#1e6d63")); draw_line(Vector2(rect.position.x + 8, rect.position.y + 4), Vector2(rect.end.x - 8, rect.position.y + 4), Color("#a8ffd0"), 3.0)
 		"gravity_portal":
 			draw_circle(center, 35.0 + sin(background_time * 4.0) * 3.0, Color(0.25, 0.95, 0.58, 0.18)); draw_arc(center, 35.0, 0.0, TAU, 24, Color("#55d68a"), 7.0); draw_arc(center, 20.0, 0.0, TAU, 16, Color("#a8ffd0"), 3.0)
 		"speed_ring":
-			draw_arc(center, 18.0, 0.0, TAU, 20, Color("#55d68a"), 6.0); draw_arc(center, 29.0, 0.0, TAU, 20, Color("#a8ffd0"), 3.0)
+			draw_circle(center, 32.0 + sin(background_time * 8.0) * 4.0, Color(0.96, 0.85, 0.32, 0.12)); draw_arc(center, 18.0, background_time * 3.0, background_time * 3.0 + TAU * 0.78, 20, Color("#55d68a"), 7.0); draw_arc(center, 29.0, -background_time * 2.0, -background_time * 2.0 + TAU * 0.78, 20, Color("#a8ffd0"), 4.0); draw_string(ThemeDB.fallback_font, center + Vector2(-12, 5), "▶", HORIZONTAL_ALIGNMENT_CENTER, 24, 16, Color("#f5e27e"))
 		"star":
 			draw_colored_polygon(PackedVector2Array([center + Vector2(0, -18), center + Vector2(9, 0), center + Vector2(0, 18), center + Vector2(-9, 0)]), Color("#f5e27e")); draw_circle(center, 5.0, Color("#fff8cf"))
 		"checkpoint":
@@ -1297,6 +1455,7 @@ func _draw_hud() -> void:
 	draw_rect(Rect2(24, 20, 690, 80), Color(0.04, 0.06, 0.16, 0.84)); draw_string(ThemeDB.fallback_font, Vector2(44, 52), "%02d  %s" % [level_index + 1, str(level["display_name"])], HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, Vector2(44, 80), "SCORE %06d    COMBO x%d    SHIELD %d/3    ♦ %03d" % [score, combo, shield_hits, diamonds], HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#f5e27e"))
 	draw_string(ThemeDB.fallback_font, Vector2(VIEW.x - 300, 46), "%d BPM  •  %s" % [int(level["music"]["bpm"]), "BUILDER" if build_mode else ("SLOWED" if quiz_active else ("CHASE" if _chase_active() else "ON BEAT"))], HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color("#cbbaff")); draw_string(ThemeDB.fallback_font, Vector2(VIEW.x - 300, 76), "DISTANCE %04d m" % int(player.x / 10.0), HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#8fa8df"))
 	if quiz_streak > 0: draw_string(ThemeDB.fallback_font, Vector2(470, 52), "QUIZ STREAK x%d" % quiz_streak, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#a8ffd0"))
+	if run_time < speed_until and started: draw_string(ThemeDB.fallback_font, Vector2(470, 80), "SPEED BOOST x%.2f  %.1fs" % [speed_boost_multiplier, max(0.0, speed_until - run_time)], HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#a8ffd0"))
 	if audio_resync_time > 0.0: draw_string(ThemeDB.fallback_font, Vector2(0, 145), "RESYNCING BEAT %.1f" % audio_resync_time, HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 19, Color("#a8ffd0"))
 	if message_time > 0.0: draw_string(ThemeDB.fallback_font, Vector2(VIEW.x / 2 - 200, 145), message, HORIZONTAL_ALIGNMENT_CENTER, 400, 22, Color("#ffffff"))
 	if ghost_final_started:
@@ -1310,6 +1469,12 @@ func _draw_title() -> void:
 	draw_rect(shop_button, Color("#55d68a") if shop_open else Color("#26336e")); draw_rect(shop_button, Color("#7cf5ff"), false, 3.0); draw_string(ThemeDB.fallback_font, shop_button.position + Vector2(14, 24), "BACK" if shop_open else "SHOP  ♦ %03d" % diamonds, HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color("#ffffff"))
 	if shop_open:
 		_draw_shop(); return
+	draw_string(ThemeDB.fallback_font, Vector2(0, 142), "TIMES TABLE", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 16, Color("#a9b8ef"))
+	var table_rect := Rect2(476.0, 108.0, 328.0, 48.0)
+	draw_rect(table_rect, Color("#182450")); draw_rect(table_rect, Color("#b06cff"), false, 3.0)
+	draw_rect(_times_table_minus_rect(), Color("#26336e")); draw_rect(_times_table_plus_rect(), Color("#26336e"))
+	draw_string(ThemeDB.fallback_font, Vector2(0, 142), "× %d" % selected_times_table, HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 22, Color("#ffffff"))
+	draw_string(ThemeDB.fallback_font, Vector2(438, 141), "−", HORIZONTAL_ALIGNMENT_CENTER, 20, 28, Color("#f5e27e")); draw_string(ThemeDB.fallback_font, Vector2(822, 141), "+", HORIZONTAL_ALIGNMENT_CENTER, 20, 28, Color("#f5e27e"))
 	for i in range(LEVEL_COUNT):
 		var card: Rect2 = _level_choice_rect(i)
 		var locked: bool = i > unlocked_level
@@ -1360,7 +1525,17 @@ func _draw_builder() -> void:
 	draw_rect(Rect2(0, 0, 300, VIEW.y), Color("#0c1230")); draw_rect(Rect2(0, 0, 300, 112), Color("#182450")); draw_string(ThemeDB.fallback_font, Vector2(24, 38), "BEAT BUILDER", HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, Vector2(24, 72), "Click add • drag empty space to pan", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#a9b8ef")); draw_string(ThemeDB.fallback_font, Vector2(24, 98), "E/I • Ctrl-Z/Y • Ctrl-C/V", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#a9b8ef"))
 	for i in range(PALETTE.size()):
 		var y := 130.0 + i * 42.0; var selected := i == selected_palette; draw_rect(Rect2(16, y - 28, 268, 36), Color("#26336e") if selected else Color("#11183e")); draw_string(ThemeDB.fallback_font, Vector2(30, y - 4), "%d  %s" % [(i + 1) % 10, PALETTE[i].replace("_", " ").to_upper()], HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#f5e27e") if selected else Color("#d6defc"))
-	draw_string(ThemeDB.fallback_font, Vector2(330, 92), "Beat grid: click to place • Enter tests from start", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#ffffff"))
+	for beat in range(0, int(level.get("length_beats", 200.0)) + 1, 4):
+		var x := START_X + float(beat) * _beat_width() - camera_x
+		if x < 300.0 or x > VIEW.x: continue
+		draw_line(Vector2(x, 116), Vector2(x, VIEW.y), Color(0.48, 0.63, 0.92, 0.20), 2.0)
+		draw_string(ThemeDB.fallback_font, Vector2(x + 4, 136), "%d" % beat, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#8fa8df"))
+	for trigger in triggers:
+		var tx := START_X + float(trigger["beat"]) * _beat_width() - camera_x
+		if tx < 300.0 or tx > VIEW.x: continue
+		draw_line(Vector2(tx, 150), Vector2(tx, FLOOR_Y), Color("#f5e27e"), 5.0)
+		draw_circle(Vector2(tx, 160), 12.0, Color("#f5e27e")); draw_string(ThemeDB.fallback_font, Vector2(tx - 34, 190), "× %d" % selected_times_table, HORIZONTAL_ALIGNMENT_CENTER, 68, 16, Color("#fff1a8"))
+	draw_string(ThemeDB.fallback_font, Vector2(330, 92), "Drag empty space to pan • yellow lines = timetable questions • Enter tests", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#ffffff"))
 
 func _draw_finish() -> void:
 	draw_rect(Rect2(Vector2.ZERO, VIEW), Color(0.02, 0.03, 0.10, 0.90))

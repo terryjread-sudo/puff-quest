@@ -10,7 +10,7 @@ static func level_catalog() -> Array:
 	return [
 		{"name": "BONE CARNIVAL", "subtitle": "Kawaii skeleton chase", "track": "cyberpunk-menu-music.mp3", "bpm": 120.0, "theme": "skeleton", "length_beats": 184.0, "chase_beat": 92.0},
 		{"name": "METRORAIL MAYHEM", "subtitle": "Ghost train pursuit", "track": "murder-on-the-metrorail.ogg", "bpm": 116.0, "theme": "metro", "length_beats": 196.0, "chase_beat": 0.0},
-		{"name": "CANDY BOSS BATTLE", "subtitle": "A sugary final showdown", "track": "boss-fight.ogg", "bpm": 128.0, "theme": "boss", "length_beats": 210.0, "chase_beat": -1.0}
+		{"name": "SLIME ESCAPE", "subtitle": "Platforms, splats and a wobbly pursuit", "track": "boss-fight.ogg", "bpm": 128.0, "theme": "slime", "length_beats": 210.0, "chase_beat": 0.0}
 	]
 
 static func default_level() -> Dictionary:
@@ -76,6 +76,8 @@ static func campaign_level(index: int) -> Dictionary:
 		objects.append(_object("speed_ring", 100.0, 1.0, {"multiplier": 1.35, "duration_beats": 6.0}, number)); number += 1
 		objects.append(_object("bounce_pad", 142.0, 0.0, {"strength": 1.15}, number)); number += 1
 		objects.append(_object("moving_platform", 178.0, 1.0, {"travel_beats": 2.5, "distance_lanes": 2.0}, number)); number += 1
+		for platform_beat in [22.0, 38.0, 54.0, 71.0, 90.0, 108.0, 126.0, 146.0, 166.0, 188.0]:
+			objects.append(_object("platform", platform_beat, 1.0 if int(platform_beat) % 2 == 0 else 1.5, {"width": 2.0, "height": 0.25}, number)); number += 1
 	return {"version": VERSION, "level_index": safe_index, "display_name": meta["name"], "subtitle": meta["subtitle"], "theme": meta["theme"], "chase_beat": meta["chase_beat"], "music": {"track": meta["track"], "bpm": meta["bpm"], "beat_offset_seconds": 0.0}, "length_beats": length_beats, "objects": objects, "triggers": triggers}
 
 static func _object(kind: String, beat: float, lane: float, properties: Dictionary, number: int) -> Dictionary:
@@ -110,7 +112,7 @@ static func _clean_objects(raw: Variant) -> Array:
 	var cleaned: Array = []
 	if not raw is Array:
 		return cleaned
-	var allowed: Array = ["block", "spike", "catapult", "bounce_pad", "moving_platform", "gravity_portal", "speed_ring", "star", "checkpoint"]
+	var allowed: Array = ["block", "spike", "catapult", "bounce_pad", "platform", "moving_platform", "gravity_portal", "speed_ring", "star", "checkpoint"]
 	for item in raw:
 		if not item is Dictionary or not allowed.has(str(item.get("type", ""))):
 			continue
