@@ -146,6 +146,14 @@ var slime_attack_next_beat := -1.0
 var slime_attack_phase_started := false
 var slime_attack_visible := true
 var slime_attack_cooldown := 0.0
+var zombie_attack_warning := 0.0
+var zombie_attack_recovery := 0.0
+var zombie_attack_wave_active := false
+var zombie_attack_wave_x := -1.0
+var zombie_attack_wave_previous_x := -1.0
+var zombie_attack_wave_hit := false
+var zombie_attack_dodge_awarded := false
+var zombie_attack_is_final := false
 var slime_end_death_started := false
 var slime_death_timer := 0.0
 var music_last_position := 0.0
@@ -203,7 +211,7 @@ func _apply_level(data: Dictionary) -> void:
 	gravity_sign = 1.0; gravity_until = 0.0; speed_boost_multiplier = 1.0
 	chase_started = false; chase_flash = 0.0; slam_next_beat = -1.0; slam_offset = 0.0; slam_velocity = 0.0; slam_timer = 0.0; slam_flash = 0.0
 	ghost_attack_timer = 0.0; ghost_attack_elapsed = 0.0; ghost_attack_next_beat = -1.0; ghost_attack_phase_started = false; ghost_attack_resolved = false; ghost_attack_dodged = false; ghost_wave_active = false; ghost_wave_x = -1.0; ghost_wave_previous_x = -1.0; ghost_wave_offsets.clear(); ghost_final_started = false; ghost_final_timer = 0.0; ghost_final_resolved = false; ghost_defeated_pending = false; ghost_end_death_started = false; ghost_death_timer = 0.0
-	slime_walk_time = 0.0; slime_attack_timer = 0.0; slime_attack_elapsed = 0.0; slime_attack_resolved = false; slime_attack_next_beat = -1.0; slime_attack_phase_started = false; slime_attack_visible = true; slime_attack_cooldown = 0.0; slime_end_death_started = false; slime_death_timer = 0.0
+	slime_walk_time = 0.0; slime_attack_timer = 0.0; slime_attack_elapsed = 0.0; slime_attack_resolved = false; slime_attack_next_beat = -1.0; slime_attack_phase_started = false; slime_attack_visible = true; slime_attack_cooldown = 0.0; _reset_zombie_attack_state(); slime_end_death_started = false; slime_death_timer = 0.0
 	checkpoint_beats = [0.0]
 	for object in objects:
 		if object["type"] == "checkpoint": checkpoint_beats.append(float(object["beat"]))
@@ -821,7 +829,7 @@ func _start_ghost_chase() -> void:
 	message = "A GHOST IS HUNTING YOU"; message_time = 1.5
 
 func _start_slime_chase() -> void:
-	chase_started = true; chase_flash = 1.2; slime_attack_next_beat = float(level.get("length_beats", 210.0)) * 0.5 + 8.0; slime_attack_phase_started = false; slime_attack_timer = 0.0; slime_attack_elapsed = 0.0; slime_attack_visible = true; slime_attack_cooldown = 0.0; slime_end_death_started = false; slime_death_timer = 0.0
+	chase_started = true; chase_flash = 1.2; _reset_zombie_attack_state(); slime_attack_next_beat = float(level.get("length_beats", 210.0)) * 0.5 + 8.0; slime_attack_phase_started = false; slime_attack_visible = true; slime_end_death_started = false; slime_death_timer = 0.0
 	if slime_voice_player != null and slime_voice_player.stream != null:
 		if slime_voice_player.stream is AudioStreamMP3: (slime_voice_player.stream as AudioStreamMP3).loop = true
 		slime_voice_player.play()
@@ -831,14 +839,29 @@ func _update_zombie_encounter(delta: float) -> void:
 	if str(level.get("theme", "")) != "zombie" or not chase_started: return
 	if slime_voice_player != null and slime_voice_player.stream != null and not slime_voice_player.playing and not slime_end_death_started:
 		slime_voice_player.play()
+	if zombie_attack_warning > 0.0:
+		zombie_attack_warning -= delta
+		if zombie_attack_warning <= 0.0: _begin_zombie_attack()
+		return
+	if zombie_attack_recovery > 0.0:
+		zombie_attack_recovery -= delta
+		return
 	if slime_attack_timer > 0.0:
 		slime_attack_timer -= delta; slime_attack_elapsed += delta
-		if slime_attack_elapsed > 0.42 and slime_attack_elapsed < 0.70 and not slime_attack_resolved:
-			slime_attack_resolved = true
-			# Platforms are the intended escape route: a player above the floor is safe.
-			if player.y + PLAYER_SIZE.y > FLOOR_Y - 92.0: _take_hit("ZOMBIE STRIKE")
+		if zombie_attack_wave_active:
+			zombie_attack_wave_previous_x = zombie_attack_wave_x
+			var wave_speed: float = 1320.0 if zombie_attack_is_final else 1080.0
+			zombie_attack_wave_x -= wave_speed * delta
+			var player_screen_x := player.x - camera_x
+			if zombie_attack_wave_previous_x >= player_screen_x and zombie_attack_wave_x <= player_screen_x and not zombie_attack_wave_hit:
+				zombie_attack_wave_hit = true
+				if _zombie_player_is_safe():
+					_award_zombie_dodge()
+				else:
+					_take_hit("ZOMBIE SHOCKWAVE")
+			if zombie_attack_wave_x <= -140.0: zombie_attack_wave_active = false
 		if slime_attack_timer <= 0.0:
-			slime_attack_visible = false; slime_attack_cooldown = _music_beat() * 5.0
+			zombie_attack_wave_active = false; slime_attack_visible = true; slime_attack_cooldown = _music_beat() * 3.0; zombie_attack_recovery = _music_beat() * 2.0
 		return
 	if slime_attack_cooldown > 0.0:
 		return
@@ -846,9 +869,26 @@ func _update_zombie_encounter(delta: float) -> void:
 	if not slime_attack_phase_started and player.x >= START_X + attack_start_beat * _beat_width():
 		slime_attack_phase_started = true; slime_attack_next_beat = attack_start_beat + 8.0; slime_attack_visible = true; message = "THE ZOMBIE TURNS BACK! USE THE PLATFORMS"; message_time = 1.7
 	if slime_attack_phase_started and slime_attack_next_beat >= 0.0 and player.x >= START_X + slime_attack_next_beat * _beat_width():
-		slime_attack_timer = 1.05; slime_attack_elapsed = 0.0; slime_attack_resolved = false; slime_attack_visible = true; slime_attack_next_beat += 20.0
-		if slime_attack_player != null and slime_attack_player.stream != null: slime_attack_player.play()
-		message = "ZOMBIE ATTACK!"; message_time = 0.8
+		zombie_attack_is_final = slime_attack_next_beat >= float(level.get("length_beats", 210.0)) - 24.0
+		zombie_attack_warning = _music_beat() * (3.0 if zombie_attack_is_final else 2.0); zombie_attack_dodge_awarded = false; slime_attack_visible = true; slime_attack_next_beat += 20.0
+		message = "FINAL ZOMBIE WIND-UP!" if zombie_attack_is_final else "ZOMBIE WIND-UP • GET READY"; message_time = 1.0
+
+func _reset_zombie_attack_state() -> void:
+	zombie_attack_warning = 0.0; zombie_attack_recovery = 0.0; zombie_attack_wave_active = false; zombie_attack_wave_x = -1.0; zombie_attack_wave_previous_x = -1.0; zombie_attack_wave_hit = false; zombie_attack_dodge_awarded = false; zombie_attack_is_final = false
+
+func _begin_zombie_attack() -> void:
+	slime_attack_timer = 1.12; slime_attack_elapsed = 0.0; slime_attack_resolved = false; slime_attack_visible = true; zombie_attack_wave_active = true; zombie_attack_wave_hit = false
+	var player_screen_x := player.x - camera_x
+	zombie_attack_wave_x = clampf(player_screen_x + 520.0, 700.0, 1190.0); zombie_attack_wave_previous_x = zombie_attack_wave_x
+	if slime_attack_player != null and slime_attack_player.stream != null: slime_attack_player.play()
+	message = "FINAL ZOMBIE STRIKE! JUMP!" if zombie_attack_is_final else "ZOMBIE STRIKE! JUMP OR USE A PLATFORM"; message_time = 0.85
+
+func _zombie_player_is_safe() -> bool:
+	return player.y + PLAYER_SIZE.y <= FLOOR_Y - 92.0
+
+func _award_zombie_dodge() -> void:
+	if zombie_attack_dodge_awarded: return
+	zombie_attack_dodge_awarded = true; score += 250; diamonds += 2; run_diamonds_earned += 2; _combo_event("ZOMBIE DODGE"); message = "CLEAN DODGE +250 • ♦ +2"; message_time = 1.0; _spawn_skin_burst(player + PLAYER_SIZE * 0.5, 14); _save_progress()
 
 func _update_ghost_encounter(delta: float) -> void:
 	if str(level.get("theme", "")) != "metro" or not chase_started: return
@@ -1046,7 +1086,9 @@ func _object_rect(object: Dictionary) -> Rect2:
 			return Rect2(x - saw_radius, y - saw_radius * 2.0, saw_radius * 2.0, saw_radius * 2.0)
 		"catapult", "bounce_pad": return Rect2(x - 32, FLOOR_Y - 28 + slam_y, 64, 28)
 		"moving_platform": return Rect2(x - 45, y - 15 + slam_y, 90, 30)
-		"platform": return Rect2(x - 62, y - 10 + slam_y, 124, 20)
+		"platform":
+			var platform_width: float = 62.0 * float(object["properties"].get("width", 2.0))
+			return Rect2(x - platform_width, y - 10 + slam_y, platform_width * 2.0, 20)
 		"gravity_portal": return Rect2(x - 28, FLOOR_Y - 170 + slam_y, 56, 170)
 		"speed_ring", "star": return Rect2(x - 18, y - 18 + slam_y, 36, 36)
 		"checkpoint": return Rect2(x - 16, FLOOR_Y - 100 + slam_y, 32, 100)
@@ -1258,7 +1300,8 @@ func _draw_zombie_chaser() -> void:
 		mode = "death"; progress = 1.0 - slime_death_timer / 1.7; sprite = zombie_death_sprite; frame_count = 12; cell_size = 501.0; flip_h = false; slime_x = clampf(player_screen_x + 160.0, 760.0, 1120.0); slime_y = FLOOR_Y - 50.0
 	elif slime_attack_phase_started:
 		slime_x = clampf(player_screen_x + 500.0, 980.0, 1180.0); slime_y = FLOOR_Y - 46.0; flip_h = false
-		if slime_attack_timer > 0.0: mode = "attack"; progress = slime_attack_elapsed / 1.05; sprite = zombie_attack_sprite; frame_count = 4; cell_size = 421.0
+		if slime_attack_timer > 0.0: mode = "attack"; progress = slime_attack_elapsed / 1.12; sprite = zombie_attack_sprite; frame_count = 4; cell_size = 421.0
+		elif zombie_attack_warning > 0.0: mode = "attack"; progress = 0.32 * (1.0 - zombie_attack_warning / max(0.01, _music_beat() * (3.0 if zombie_attack_is_final else 2.0))); sprite = zombie_attack_sprite; frame_count = 4; cell_size = 421.0
 		else: mode = "idle"; sprite = zombie_idle_sprite; frame_count = 4; cell_size = 408.0
 	var bob := sin(slime_walk_time * 7.0) * 4.0 if mode == "walk" else 0.0
 	var scale := 0.78 if mode == "walk" else 0.82
@@ -1273,6 +1316,16 @@ func _draw_zombie_chaser() -> void:
 		_draw_zombie_sprite(sprite, Vector2(slime_x, slime_y + bob), scale, frame_index, frame_count, cell_size, flip_h, Color(1.0, 1.0, 1.0, 0.98))
 	else:
 		_draw_procedural_zombie(Vector2(slime_x, slime_y + bob), scale, mode, progress)
+	if zombie_attack_warning > 0.0:
+		var warning_pulse := 1.0 + _beat_pulse() * 0.18
+		draw_circle(Vector2(slime_x - 12.0, FLOOR_Y - 58.0), 76.0 * warning_pulse, Color(1.0, 0.25, 0.42, 0.10))
+		draw_arc(Vector2(slime_x - 12.0, FLOOR_Y - 58.0), 70.0 * warning_pulse, 0.0, TAU, 28, Color(1.0, 0.42, 0.48, 0.78), 5.0)
+	if zombie_attack_wave_active:
+		for row in range(5):
+			var wave_y := FLOOR_Y - 18.0 - row * 52.0
+			draw_line(Vector2(zombie_attack_wave_x, wave_y), Vector2(zombie_attack_wave_x - 28.0, wave_y - 18.0), Color(1.0, 0.32, 0.42, 0.82), 7.0)
+			draw_line(Vector2(zombie_attack_wave_x - 28.0, wave_y - 18.0), Vector2(zombie_attack_wave_x - 56.0, wave_y), Color(1.0, 0.72, 0.42, 0.72), 5.0)
+		draw_arc(Vector2(zombie_attack_wave_x - 28.0, FLOOR_Y + 2.0), 42.0, PI, TAU, 18, Color(1.0, 0.42, 0.48, 0.75), 6.0)
 
 func _draw_zombie_sprite(sprite: Texture2D, origin: Vector2, scale: float, frame_index: int, frame_count: int, cell_size: float, flip_h: bool, tint: Color) -> void:
 	if sprite == null: return

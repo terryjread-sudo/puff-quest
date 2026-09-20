@@ -76,8 +76,12 @@ static func campaign_level(index: int) -> Dictionary:
 		objects.append(_object("speed_ring", 100.0, 1.0, {"multiplier": 1.35, "duration_beats": 6.0}, number)); number += 1
 		objects.append(_object("bounce_pad", 142.0, 0.0, {"strength": 1.15}, number)); number += 1
 		objects.append(_object("moving_platform", 178.0, 1.0, {"travel_beats": 2.5, "distance_lanes": 2.0}, number)); number += 1
-		for platform_beat in [22.0, 38.0, 54.0, 71.0, 90.0, 108.0, 126.0, 146.0, 166.0, 188.0]:
-			objects.append(_object("platform", platform_beat, 1.0 if int(platform_beat) % 2 == 0 else 1.5, {"width": 2.0, "height": 0.25}, number)); number += 1
+		# Early practice platforms, followed by a deliberately spaced safe route
+		# just before each zombie strike (113, 133, 153, 173 and 193).
+		for platform_beat in [22.0, 38.0, 54.0, 71.0, 90.0, 111.0, 131.0, 151.0, 172.0, 191.0]:
+			var platform_lane: float = 1.0 if int(platform_beat) % 2 == 0 else 1.5
+			var platform_width: float = 2.8 if platform_beat >= 111.0 else 2.0
+			objects.append(_object("platform", platform_beat, platform_lane, {"width": platform_width, "height": 0.25}, number)); number += 1
 	return {"version": VERSION, "level_index": safe_index, "display_name": meta["name"], "subtitle": meta["subtitle"], "theme": meta["theme"], "chase_beat": meta["chase_beat"], "music": {"track": meta["track"], "bpm": meta["bpm"], "beat_offset_seconds": 0.0}, "length_beats": length_beats, "objects": objects, "triggers": triggers}
 
 static func _object(kind: String, beat: float, lane: float, properties: Dictionary, number: int) -> Dictionary:
