@@ -90,6 +90,7 @@ var message_time := 0.0
 var selected_palette := 0
 var rng := RandomNumberGenerator.new()
 var music_player: AudioStreamPlayer
+var ghost_woosh_player: AudioStreamPlayer
 var skeleton_sprite: Texture2D
 var ghost_float_sprite: Texture2D
 var ghost_float_left_sprite: Texture2D
@@ -126,6 +127,8 @@ var ghost_wave_offsets: Dictionary = {}
 var ghost_final_started := false
 var ghost_final_timer := 0.0
 var ghost_final_resolved := false
+var ghost_defeated_pending := false
+var ghost_end_death_started := false
 var ghost_death_timer := 0.0
 var music_last_position := 0.0
 var music_expected_playing := false
@@ -153,6 +156,10 @@ func _ready() -> void:
 	ghost_attack_sprite = load("res://assets/ghost-attack-spritesheet.png") as Texture2D
 	ghost_idle_sprite = load("res://assets/ghost-idle3-spritesheet.png") as Texture2D
 	ghost_death_sprite = load("res://assets/ghost-death-spritesheet.png") as Texture2D
+	ghost_woosh_player = AudioStreamPlayer.new()
+	ghost_woosh_player.stream = load("res://assets/air_move.wav") as AudioStream
+	ghost_woosh_player.volume_db = -3.0
+	add_child(ghost_woosh_player)
 	queue_redraw()
 
 func _apply_level(data: Dictionary) -> void:
@@ -164,7 +171,7 @@ func _apply_level(data: Dictionary) -> void:
 	consumed.clear(); triggered.clear(); catapult_state.clear()
 	gravity_sign = 1.0; gravity_until = 0.0
 	chase_started = false; chase_flash = 0.0; slam_next_beat = -1.0; slam_offset = 0.0; slam_velocity = 0.0; slam_timer = 0.0; slam_flash = 0.0
-	ghost_attack_timer = 0.0; ghost_attack_elapsed = 0.0; ghost_attack_next_beat = -1.0; ghost_attack_phase_started = false; ghost_attack_resolved = false; ghost_attack_dodged = false; ghost_wave_active = false; ghost_wave_x = -1.0; ghost_wave_previous_x = -1.0; ghost_wave_offsets.clear(); ghost_final_started = false; ghost_final_timer = 0.0; ghost_final_resolved = false; ghost_death_timer = 0.0
+	ghost_attack_timer = 0.0; ghost_attack_elapsed = 0.0; ghost_attack_next_beat = -1.0; ghost_attack_phase_started = false; ghost_attack_resolved = false; ghost_attack_dodged = false; ghost_wave_active = false; ghost_wave_x = -1.0; ghost_wave_previous_x = -1.0; ghost_wave_offsets.clear(); ghost_final_started = false; ghost_final_timer = 0.0; ghost_final_resolved = false; ghost_defeated_pending = false; ghost_end_death_started = false; ghost_death_timer = 0.0
 	checkpoint_beats = [0.0]
 	for object in objects:
 		if object["type"] == "checkpoint": checkpoint_beats.append(float(object["beat"]))
@@ -275,6 +282,10 @@ func _process(delta: float) -> void:
 
 func _run_step(delta: float) -> void:
 	run_time += delta
+	if ghost_end_death_started:
+		velocity = Vector2.ZERO
+		if ghost_death_timer <= 0.0: _finish()
+		return
 	var in_intro: bool = intro_time_left > 0.0
 	intro_time_left = max(0.0, intro_time_left - delta)
 	if in_intro:
@@ -321,7 +332,10 @@ func _run_step(delta: float) -> void:
 	if crash_timer > 0.0: return
 	for i in range(checkpoint_beats.size()):
 		if player.x >= START_X + checkpoint_beats[i] * _beat_width(): checkpoint_index = i
-	if player.x >= START_X + float(level["length_beats"]) * _beat_width(): _finish()
+	if player.x >= START_X + float(level["length_beats"]) * _beat_width():
+		if ghost_defeated_pending and not ghost_end_death_started:
+			ghost_end_death_started = true; ghost_death_timer = 1.25; message = "FINAL STRIKE"; message_time = 1.25
+		elif not ghost_end_death_started: _finish()
 	camera_x = clamp(player.x - 250.0, 0.0, START_X + float(level["length_beats"]) * _beat_width() - VIEW.x)
 
 func _quiz_step(delta: float) -> void:
@@ -501,12 +515,12 @@ func _shop_button_hit(pos: Vector2) -> bool:
 	return screen_rect.grow(16.0).has_point(pos) or logical_rect.grow(16.0).has_point(pos)
 
 func _finish_menu_rect() -> Rect2:
-	return Rect2((VIEW.x - 320.0) * 0.5, VIEW.y - 94.0, 320.0, 60.0)
+	return Rect2((VIEW.x - 320.0) * 0.5, 535.0, 320.0, 60.0)
 
 func _finish_menu_hit(pos: Vector2) -> bool:
 	var logical_rect := _finish_menu_rect()
 	var screen_size := get_viewport_rect().size
-	var screen_rect := Rect2((screen_size.x - 320.0) * 0.5, screen_size.y - 94.0, 320.0, 60.0)
+	var screen_rect := Rect2((screen_size.x - 320.0) * 0.5, max(20.0, screen_size.y - 74.0), 320.0, 60.0)
 	return logical_rect.grow(16.0).has_point(pos) or screen_rect.grow(16.0).has_point(pos)
 
 func _touch_jump_rect() -> Rect2:
@@ -729,7 +743,7 @@ func _update_ghost_encounter(delta: float) -> void:
 		bounce["velocity"] = float(bounce["velocity"]) + 1800.0 * delta
 		if float(bounce["offset"]) >= 0.0: ghost_wave_offsets.erase(id)
 		else: ghost_wave_offsets[id] = bounce
-	if ghost_death_timer > 0.0: return
+	if ghost_death_timer > 0.0 or ghost_defeated_pending: return
 	if ghost_final_started:
 		ghost_final_timer -= delta
 		if ghost_final_timer <= 0.0 and not ghost_final_resolved:
@@ -760,13 +774,14 @@ func _update_ghost_encounter(delta: float) -> void:
 
 func _begin_ghost_attack() -> void:
 	ghost_attack_timer = 1.02; ghost_attack_elapsed = 0.0; ghost_attack_resolved = false; ghost_wave_active = true; ghost_wave_x = VIEW.x + 120.0; ghost_wave_previous_x = ghost_wave_x; ghost_attack_next_beat += 18.0
+	if ghost_woosh_player != null and ghost_woosh_player.stream != null: ghost_woosh_player.play()
 
 func _start_ghost_final() -> void:
 	ghost_final_started = true; ghost_final_timer = 3.0; ghost_final_resolved = false; message = "DASH THE GHOST!"; message_time = 3.0
 
 func _defeat_ghost() -> void:
 	if ghost_final_started and not ghost_final_resolved:
-		ghost_final_resolved = true; ghost_final_started = false; ghost_death_timer = 1.25; score += 600; _combo_event("GHOST DEFEATED"); message = "GHOST DEFEATED!"; message_time = 1.25
+		ghost_final_resolved = true; ghost_defeated_pending = true; score += 600; _combo_event("GHOST DEFEATED"); message = "GHOST DEFEATED!"; message_time = 1.25
 
 func _trigger_ground_slam() -> void:
 	slam_timer = 0.72
@@ -1074,9 +1089,9 @@ func _draw_ghost_chaser() -> void:
 	elif ghost_final_started:
 		sprite = ghost_idle_sprite; frame_count = 8; frame_index = int(floor(background_time / _music_beat() * 4.0)) % frame_count; ghost_x = clampf(player_screen_x + 190.0, 610.0, 1030.0); ghost_origin = Vector2(ghost_x, FLOOR_Y - 28.0); ghost_scale = 1.48
 	elif ghost_attack_timer > 0.0:
-		sprite = ghost_attack_sprite; frame_count = 12; frame_index = clampi(int(floor(ghost_attack_elapsed / 0.92 * frame_count)), 0, frame_count - 1); ghost_x = clampf(player_screen_x + 330.0, 780.0, 1120.0); ghost_origin = Vector2(ghost_x, FLOOR_Y - 22.0); ghost_scale = 1.62
+		sprite = ghost_attack_sprite; frame_count = 12; frame_index = clampi(int(floor(ghost_attack_elapsed / 0.92 * frame_count)), 0, frame_count - 1); ghost_x = clampf(player_screen_x + 500.0, 940.0, 1140.0); ghost_origin = Vector2(ghost_x, FLOOR_Y - 22.0); ghost_scale = 1.62
 	elif ghost_attack_phase_started:
-		sprite = ghost_float_left_sprite; frame_count = 8; frame_index = int(floor(background_time / _music_beat() * 5.0)) % frame_count; ghost_x = clampf(player_screen_x + 330.0, 780.0, 1120.0); ghost_origin = Vector2(ghost_x, FLOOR_Y - 24.0); ghost_scale = 1.62
+		sprite = ghost_float_left_sprite; frame_count = 8; frame_index = int(floor(background_time / _music_beat() * 5.0)) % frame_count; ghost_x = clampf(player_screen_x + 500.0, 940.0, 1140.0); ghost_origin = Vector2(ghost_x, FLOOR_Y - 24.0); ghost_scale = 1.62
 	draw_circle(ghost_origin + Vector2(0.0, -110.0), 128.0 + _beat_pulse() * 16.0, Color(0.72, 0.54, 0.95, 0.10))
 	_draw_ghost_sprite(sprite, ghost_origin, ghost_scale, frame_index, Color(1.0, 1.0, 1.0, 0.98))
 	if ghost_wave_active:
@@ -1362,7 +1377,7 @@ func _draw_finish() -> void:
 	var menu_button := _finish_menu_rect()
 	draw_rect(menu_button, Color("#26336e")); draw_rect(menu_button, Color("#7cf5ff"), false, 3.0)
 	draw_string(ThemeDB.fallback_font, menu_button.position + Vector2(0, 38), "TOUCH: BACK TO LEVELS", HORIZONTAL_ALIGNMENT_CENTER, menu_button.size.x, 18, Color("#ffffff"))
-	draw_string(ThemeDB.fallback_font, Vector2(0, 625), "SPACE: PLAY AGAIN  •  ESC: LEVELS", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 16, Color("#a9b8ef"))
+	draw_string(ThemeDB.fallback_font, Vector2(0, 620), "SPACE: PLAY AGAIN  •  ESC: LEVELS", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 16, Color("#a9b8ef"))
 
 func _draw_finish_stat(rect: Rect2, label: String, value: String, color: Color) -> void:
 	draw_rect(rect, Color("#182450")); draw_rect(rect, Color(color, 0.55), false, 3.0)

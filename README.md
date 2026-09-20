@@ -45,6 +45,7 @@ Open this folder in Godot 4.x and run `main.tscn`. The Web export can be configu
 - Cyberpunk Menu Music — OpenGameArt.org source supplied for this project.
 - Murder on the Metrorail — joeBaxterWebb, ISAo, and SRG774; CC-BY 4.0 / OGA-BY 3.0 components.
 - Boss Fight — AiTechEye; OGA-BY 4.0.
+- Air Woosh Move — Almitory; CC0, used for the level 2 ghost wave attack.
 
 ## Visual reference
 
