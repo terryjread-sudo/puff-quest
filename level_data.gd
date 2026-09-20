@@ -112,7 +112,7 @@ static func _clean_objects(raw: Variant) -> Array:
 	var cleaned: Array = []
 	if not raw is Array:
 		return cleaned
-	var allowed: Array = ["block", "spike", "catapult", "bounce_pad", "platform", "moving_platform", "gravity_portal", "speed_ring", "star", "checkpoint"]
+	var allowed: Array = ["block", "spike", "saw", "catapult", "bounce_pad", "platform", "moving_platform", "gravity_portal", "speed_ring", "star", "checkpoint"]
 	for item in raw:
 		if not item is Dictionary or not allowed.has(str(item.get("type", ""))):
 			continue

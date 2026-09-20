@@ -10,7 +10,7 @@ const GRAVITY := 1900.0
 const JUMP_VELOCITY := -720.0
 const DASH_SPEED := 920.0
 const DASH_TIME := 0.20
-const PALETTE := ["block", "spike", "catapult", "timetable", "bounce_pad", "platform", "moving_platform", "gravity_portal", "speed_ring", "star", "checkpoint"]
+const PALETTE := ["block", "spike", "saw", "catapult", "timetable", "bounce_pad", "platform", "moving_platform", "gravity_portal", "speed_ring", "star", "checkpoint"]
 const LEVEL_COUNT := 3
 const BEAT_FLASH_STRENGTH := 0.055
 const INTRO_CLEAR_SECONDS := 6.0
@@ -430,11 +430,13 @@ func _input(event: InputEvent) -> void:
 			_builder_key(event.keycode); return
 	if build_mode:
 		if event is InputEventMouseMotion:
-			if drag_object_index >= 0: _builder_drag(event.position)
+			if drag_object_index != -1: _builder_drag(event.position)
 			elif pan_dragging: _builder_pan(event.position.x)
 		if event is InputEventMouseButton and event.pressed: _builder_click(event.position, event.button_index)
 		if event is InputEventMouseButton and not event.pressed and event.button_index == MOUSE_BUTTON_LEFT: _builder_release()
-		if event is InputEventScreenDrag and pan_dragging: _builder_pan(event.position.x)
+		if event is InputEventScreenDrag:
+			if drag_object_index != -1: _builder_drag(event.position)
+			elif pan_dragging: _builder_pan(event.position.x)
 		if event is InputEventScreenTouch and event.pressed: _builder_click(event.position, MOUSE_BUTTON_LEFT)
 		if event is InputEventScreenTouch and not event.pressed: _builder_release()
 		return
@@ -607,6 +609,7 @@ func _exit_builder() -> void:
 func _builder_key(key: Key) -> void:
 	if key == KEY_ESCAPE or key == KEY_B: _exit_builder(); return
 	if key == KEY_ENTER: _restart_run(); return
+	if key == KEY_T: _test_from_builder_position(); return
 	if key == KEY_E: _export_level(); return
 	if key == KEY_I: _import_level(); return
 	if key == KEY_R: _apply_level(LevelData.campaign_level(level_index)); message = "DEFAULT LEVEL RESTORED"; message_time = 1.2; return
@@ -650,6 +653,16 @@ func _object_index_at(pos: Vector2) -> int:
 		if _object_rect(objects[i]).grow(12.0).has_point(world_pos): return i
 	return -1
 
+func _builder_player_rect() -> Rect2:
+	return Rect2(player.x - camera_x, player.y, PLAYER_SIZE)
+
+func _test_from_builder_position() -> void:
+	if not build_mode: return
+	build_mode = false; paused = false; started = true; finished = false; quiz_active = false; quiz_feedback_time = 0.0; intro_time_left = 0.0
+	run_time = max(0.0, (player.x - START_X) / RUN_SPEED)
+	velocity = Vector2.ZERO; dash_left = 0.0; crash_timer = 0.0; _ensure_music()
+	message = "TESTING FROM CUBE POSITION"; message_time = 1.2
+
 func _copy_selected() -> void:
 	if selected_object_index < 0 or selected_object_index >= objects.size(): return
 	clipboard_object = objects[selected_object_index].duplicate(true)
@@ -665,6 +678,11 @@ func _paste_selected() -> void:
 	_sync_level(); _record_edit(); message = "OBJECT PASTED"; message_time = 0.9
 
 func _builder_drag(pos: Vector2) -> void:
+	if drag_object_index == -2:
+		player.x = max(START_X, camera_x + pos.x - PLAYER_SIZE.x * 0.5)
+		player.y = clamp(pos.y - PLAYER_SIZE.y * 0.5, 90.0, FLOOR_Y - PLAYER_SIZE.y)
+		velocity = Vector2.ZERO
+		return
 	if drag_object_index < 0 or drag_object_index >= objects.size(): return
 	var beat: float = max(0.0, round((camera_x + pos.x - START_X) / _beat_width() * 4.0) / 4.0)
 	var lane: float = clamp(round((FLOOR_Y - pos.y) / LANE_HEIGHT * 2.0) / 2.0, -1.0, 3.0)
@@ -680,6 +698,11 @@ func _builder_pan(pos_x: float) -> void:
 	pan_last_x = pos_x
 
 func _builder_release() -> void:
+	if drag_object_index == -2:
+		message = "CUBE TEST POSITION SET • PRESS T TO TEST"; message_time = 1.2
+		drag_object_index = -1
+		pan_dragging = false; pan_moved = false
+		return
 	if drag_object_index >= 0:
 		_record_edit()
 		message = "OBJECT MOVED"; message_time = 0.9
@@ -702,7 +725,7 @@ func _builder_click(pos: Vector2, button: MouseButton) -> void:
 		if index >= 0 and index < PALETTE.size(): selected_palette = index
 		return
 	if pos.y < 115.0:
-		if pos.x < 160.0: _export_level()
+		if pos.x < 145.0: _export_level()
 		elif pos.x < 300.0: _import_level()
 		return
 	var beat: float = max(0.0, round((camera_x + pos.x - START_X) / _beat_width() * 4.0) / 4.0)
@@ -711,6 +734,9 @@ func _builder_click(pos: Vector2, button: MouseButton) -> void:
 	if button == MOUSE_BUTTON_MIDDLE:
 		selected_object_index = _object_index_at(pos); _copy_selected(); return
 	if button == MOUSE_BUTTON_LEFT:
+		if _builder_player_rect().grow(18.0).has_point(pos):
+			drag_object_index = -2
+			return
 		selected_object_index = _object_index_at(pos)
 		if selected_object_index >= 0:
 			drag_object_index = selected_object_index
@@ -719,6 +745,7 @@ func _builder_click(pos: Vector2, button: MouseButton) -> void:
 
 func _default_properties(kind: String) -> Dictionary:
 	match kind:
+		"saw": return {"radius": 30.0, "spin_speed": 4.0}
 		"catapult": return {"delay_beats": 1.0, "launch_beats": 2.0}
 		"bounce_pad": return {"strength": 1.0}
 		"moving_platform": return {"travel_beats": 4.0, "distance_lanes": 2.0}
@@ -875,13 +902,14 @@ func _check_objects() -> void:
 	for object in objects + runtime_objects:
 		var id: String = object["id"]; var kind: String = object["type"]
 		if consumed.has(id): continue
-		if invulnerability > 0.0 and (kind == "spike" or kind == "block"): continue
+		if invulnerability > 0.0 and (kind == "spike" or kind == "block" or kind == "saw"): continue
 		var rect := _object_rect(object)
 		if not body.intersects(rect): continue
 		match kind:
 			"spike", "block":
 				if dash_left > 0.0: score += 40; consumed[id] = true; _spawn_burst(rect.position + rect.size * 0.5, Color("#ff698f"), 14)
 				else: _take_hit("HIT THE BEAT WALL")
+			"saw": _take_hit("SAW BLADE")
 			"catapult":
 				catapult_boost_left = float(object["properties"].get("launch_beats", 2.0)) * _music_beat(); velocity.x = DASH_SPEED; velocity.y = JUMP_VELOCITY * 1.15; consumed[id] = true; _combo_event("CATAPULT"); _spawn_skin_burst(rect.position + rect.size * 0.5, 12); message = "CATAPULT! UP + FORWARD"; message_time = 1.0
 			"bounce_pad": velocity.y = JUMP_VELOCITY * float(object["properties"].get("strength", 1.0)); consumed[id] = true; _combo_event("BOUNCE")
@@ -1004,6 +1032,9 @@ func _object_rect(object: Dictionary) -> Rect2:
 	match kind:
 		"spike": return Rect2(x - 20, FLOOR_Y - 54 + slam_y, 40, 54)
 		"block": return Rect2(x - 22, FLOOR_Y - 82 * float(object["properties"].get("height", 1.0)) + slam_y, 44, 82 * float(object["properties"].get("height", 1.0)))
+		"saw":
+			var saw_radius: float = float(object["properties"].get("radius", 30.0))
+			return Rect2(x - saw_radius, y - saw_radius * 2.0, saw_radius * 2.0, saw_radius * 2.0)
 		"catapult", "bounce_pad": return Rect2(x - 32, FLOOR_Y - 28 + slam_y, 64, 28)
 		"moving_platform": return Rect2(x - 45, y - 15 + slam_y, 90, 30)
 		"platform": return Rect2(x - 62, y - 10 + slam_y, 124, 20)
@@ -1434,6 +1465,19 @@ func _draw_object(object: Dictionary) -> void:
 			draw_line(Vector2(center.x - 7, rect.position.y + 18), Vector2(center.x + 7, rect.position.y + 30), Color("#ffd6e2"), 4.0)
 		"block":
 			draw_rect(rect, Color("#ed496f")); draw_rect(rect.grow(-7.0), Color("#8d2348"), false, 4.0); draw_circle(rect.get_center(), 8.0, Color("#ffb6c9"))
+		"saw":
+			var saw_radius := rect.size.x * 0.5
+			var saw_center := rect.get_center()
+			draw_circle(saw_center, saw_radius + 7.0 + sin(background_time * 10.0) * 2.0, Color(0.93, 0.29, 0.44, 0.16))
+			draw_set_transform(saw_center, background_time * float(object["properties"].get("spin_speed", 4.0)), Vector2.ONE)
+			for tooth in range(12):
+				var a := tooth * TAU / 12.0
+				var p0 := Vector2.from_angle(a) * (saw_radius - 3.0)
+				var p1 := Vector2.from_angle(a + 0.13) * (saw_radius + 8.0)
+				var p2 := Vector2.from_angle(a + 0.26) * (saw_radius - 3.0)
+				draw_colored_polygon(PackedVector2Array([p0, p1, p2]), Color("#ff4f73"))
+			draw_circle(Vector2.ZERO, saw_radius - 5.0, Color("#d92e58")); draw_circle(Vector2.ZERO, 9.0, Color("#ffd1dc")); draw_circle(Vector2.ZERO, 4.0, Color("#7f1c43"))
+			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		"catapult":
 			draw_colored_polygon(PackedVector2Array([Vector2(rect.position.x, rect.end.y), Vector2(rect.end.x, rect.end.y), Vector2(rect.end.x - 10.0, rect.position.y + 7.0), Vector2(rect.position.x + 18.0, rect.position.y + 2.0)]), Color("#55d68a")); draw_line(Vector2(center.x - 18.0, rect.end.y - 4.0), Vector2(center.x + 8.0, rect.position.y - 12.0), Color("#124d46"), 7.0); draw_circle(Vector2(center.x - 18.0, rect.end.y - 4.0), 8.0, Color("#a8ffd0")); draw_circle(Vector2(center.x + 8.0, rect.position.y - 12.0), 10.0, Color("#f5e27e")); draw_colored_polygon(PackedVector2Array([Vector2(center.x + 8.0, rect.position.y - 34.0), Vector2(center.x - 2.0, rect.position.y - 20.0), Vector2(center.x + 3.0, rect.position.y - 20.0), Vector2(center.x + 3.0, rect.position.y - 10.0), Vector2(center.x + 13.0, rect.position.y - 10.0), Vector2(center.x + 13.0, rect.position.y - 20.0), Vector2(center.x + 18.0, rect.position.y - 20.0)]), Color("#a8ffd0"))
 		"bounce_pad":
@@ -1522,7 +1566,8 @@ func _draw_quiz() -> void:
 		draw_string(ThemeDB.fallback_font, Vector2(0, 620), "TIME LEFT %.1f" % max(0.0, quiz_time), HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 22, Color("#ff9ab4"))
 
 func _draw_builder() -> void:
-	draw_rect(Rect2(0, 0, 300, VIEW.y), Color("#0c1230")); draw_rect(Rect2(0, 0, 300, 112), Color("#182450")); draw_string(ThemeDB.fallback_font, Vector2(24, 38), "BEAT BUILDER", HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, Vector2(24, 72), "Click add • drag empty space to pan", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#a9b8ef")); draw_string(ThemeDB.fallback_font, Vector2(24, 98), "E/I • Ctrl-Z/Y • Ctrl-C/V", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#a9b8ef"))
+	draw_rect(Rect2(0, 0, 300, VIEW.y), Color("#0c1230")); draw_rect(Rect2(0, 0, 300, 112), Color("#182450")); draw_string(ThemeDB.fallback_font, Vector2(24, 38), "BEAT BUILDER", HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, Vector2(24, 63), "Drag empty space to pan", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#a9b8ef"))
+	draw_rect(Rect2(16, 72, 126, 28), Color("#26336e")); draw_rect(Rect2(150, 72, 134, 28), Color("#26336e")); draw_string(ThemeDB.fallback_font, Vector2(26, 92), "EXPORT JSON", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#a8ffd0")); draw_string(ThemeDB.fallback_font, Vector2(160, 92), "IMPORT JSON", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#f5e27e"))
 	for i in range(PALETTE.size()):
 		var y := 130.0 + i * 42.0; var selected := i == selected_palette; draw_rect(Rect2(16, y - 28, 268, 36), Color("#26336e") if selected else Color("#11183e")); draw_string(ThemeDB.fallback_font, Vector2(30, y - 4), "%d  %s" % [(i + 1) % 10, PALETTE[i].replace("_", " ").to_upper()], HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#f5e27e") if selected else Color("#d6defc"))
 	for beat in range(0, int(level.get("length_beats", 200.0)) + 1, 4):
@@ -1535,7 +1580,7 @@ func _draw_builder() -> void:
 		if tx < 300.0 or tx > VIEW.x: continue
 		draw_line(Vector2(tx, 150), Vector2(tx, FLOOR_Y), Color("#f5e27e"), 5.0)
 		draw_circle(Vector2(tx, 160), 12.0, Color("#f5e27e")); draw_string(ThemeDB.fallback_font, Vector2(tx - 34, 190), "× %d" % selected_times_table, HORIZONTAL_ALIGNMENT_CENTER, 68, 16, Color("#fff1a8"))
-	draw_string(ThemeDB.fallback_font, Vector2(330, 92), "Drag empty space to pan • yellow lines = timetable questions • Enter tests", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#ffffff"))
+	draw_string(ThemeDB.fallback_font, Vector2(330, 92), "Yellow lines = timetable questions • drag cyan cube • T test from cube • Enter restart", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#ffffff"))
 
 func _draw_finish() -> void:
 	draw_rect(Rect2(Vector2.ZERO, VIEW), Color(0.02, 0.03, 0.10, 0.90))
