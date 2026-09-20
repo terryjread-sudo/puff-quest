@@ -33,7 +33,7 @@ Open this folder in Godot 4.x and run `main.tscn`. The Web export can be configu
 - Level 1 uses a local transparent sprite sheet of the supplied detailed running-skeleton reference, with twelve beat-synchronised poses for the giant leader and slam pose.
 - Level 2 starts a ghost-train pursuit immediately after its opening tutorial. Around the midpoint, the ghost moves to the right side facing left and sends a travelling wave from right to left; the player and visible objects bounce as the wave reaches them. Near the finish, DASH THE GHOST triggers its supplied death animation.
 - The supplied ghost animations are rasterized into transparent left/right-facing local sprite sheets, and missing/empty source frames are held on the nearest valid pose to prevent flashing.
-- Level 3 is Slime Escape: the slime chases from behind in the first half, then appears on the right and attacks left at timed intervals. Raised platforms are safe escape routes during its splat window, and a deterministic drawn fallback keeps every slime frame stable without missing-frame flashes.
+- Level 3 is Zombie Village Run: a zombie villager chases from behind in the first half, then appears on the right and attacks left at timed intervals. Raised platforms are safe escape routes during its strike window, and a deterministic drawn fallback keeps every walk, idle, attack and death pose stable without missing-frame flashes.
 - The title screen lets the learner choose a persistent times table from 2× to 12×; every quiz gate in the campaign uses that choice. The builder marks every timetable trigger with a gold timeline marker and supports free-place platforms.
 - Catapult launches now accelerate the cube forward over their beat duration instead of teleporting it.
 - Stars award diamonds, correct times-table answers award bonus diamonds, and the title-screen shop persists owned/equipped cube skins in browser local storage.
@@ -48,7 +48,7 @@ Open this folder in Godot 4.x and run `main.tscn`. The Web export can be configu
 - Murder on the Metrorail — joeBaxterWebb, ISAo, and SRG774; CC-BY 4.0 / OGA-BY 3.0 components.
 - Boss Fight — AiTechEye; OGA-BY 4.0.
 - Air Woosh Move — Almitory; CC0, used for the level 2 ghost wave attack.
-- Ghost Monster Voice Moaning & Growling — qubodup; CC0, used as the level 3 slime chase voice ([OpenGameArt source](https://opengameart.org/content/ghost-monster-voice-moaning-growling)).
+- Ghost Monster Voice Moaning & Growling — qubodup; CC0, used as the level 3 pursuit voice ([OpenGameArt source](https://opengameart.org/content/ghost-monster-voice-moaning-growling)).
 - Slime attack impact — supplied local `impactsplat01.mp3.flac` reference audio, used for the level 3 attack.
 
 ## Visual reference

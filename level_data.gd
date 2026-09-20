@@ -10,7 +10,7 @@ static func level_catalog() -> Array:
 	return [
 		{"name": "BONE CARNIVAL", "subtitle": "Kawaii skeleton chase", "track": "cyberpunk-menu-music.mp3", "bpm": 120.0, "theme": "skeleton", "length_beats": 184.0, "chase_beat": 92.0},
 		{"name": "METRORAIL MAYHEM", "subtitle": "Ghost train pursuit", "track": "murder-on-the-metrorail.ogg", "bpm": 116.0, "theme": "metro", "length_beats": 196.0, "chase_beat": 0.0},
-		{"name": "SLIME ESCAPE", "subtitle": "Platforms, splats and a wobbly pursuit", "track": "boss-fight.ogg", "bpm": 128.0, "theme": "slime", "length_beats": 210.0, "chase_beat": 0.0}
+		{"name": "ZOMBIE VILLAGE RUN", "subtitle": "A relentless villager pursuit", "track": "boss-fight.ogg", "bpm": 128.0, "theme": "zombie", "length_beats": 210.0, "chase_beat": 0.0}
 	]
 
 static func default_level() -> Dictionary:

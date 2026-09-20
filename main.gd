@@ -353,7 +353,7 @@ func _run_step(delta: float) -> void:
 		return
 	if _chase_active() and not chase_started: _start_chase()
 	_update_ghost_encounter(delta)
-	_update_slime_encounter(delta)
+	_update_zombie_encounter(delta)
 	_update_objects()
 	if intro_time_left <= 0.0:
 		_check_objects(); _check_triggers()
@@ -361,8 +361,8 @@ func _run_step(delta: float) -> void:
 	for i in range(checkpoint_beats.size()):
 		if player.x >= START_X + checkpoint_beats[i] * _beat_width(): checkpoint_index = i
 	if player.x >= START_X + float(level["length_beats"]) * _beat_width():
-		if str(level.get("theme", "")) == "slime" and not slime_end_death_started:
-			slime_end_death_started = true; slime_death_timer = 1.7; message = "SLIME DEFEATED"; message_time = 1.7
+		if str(level.get("theme", "")) == "zombie" and not slime_end_death_started:
+			slime_end_death_started = true; slime_death_timer = 1.7; message = "ZOMBIE DEFEATED"; message_time = 1.7
 		elif ghost_defeated_pending and not ghost_end_death_started:
 			ghost_end_death_started = true; ghost_death_timer = 1.25; message = "FINAL STRIKE"; message_time = 1.25
 		elif not ghost_end_death_started: _finish()
@@ -801,7 +801,7 @@ func _start_chase() -> void:
 	if str(level.get("theme", "")) == "metro":
 		_start_ghost_chase()
 		return
-	if str(level.get("theme", "")) == "slime":
+	if str(level.get("theme", "")) == "zombie":
 		_start_slime_chase()
 		return
 	chase_started = true; chase_flash = 1.2; message = "THE CARNIVAL IS CHASING YOU"; message_time = 1.5
@@ -817,10 +817,10 @@ func _start_slime_chase() -> void:
 	if slime_voice_player != null and slime_voice_player.stream != null:
 		if slime_voice_player.stream is AudioStreamMP3: (slime_voice_player.stream as AudioStreamMP3).loop = true
 		slime_voice_player.play()
-	message = "A SLIME IS SLIMING AFTER YOU"; message_time = 1.5
+	message = "A ZOMBIE VILLAGER IS AFTER YOU"; message_time = 1.5
 
-func _update_slime_encounter(delta: float) -> void:
-	if str(level.get("theme", "")) != "slime" or not chase_started: return
+func _update_zombie_encounter(delta: float) -> void:
+	if str(level.get("theme", "")) != "zombie" or not chase_started: return
 	if slime_voice_player != null and slime_voice_player.stream != null and not slime_voice_player.playing and not slime_end_death_started:
 		slime_voice_player.play()
 	if slime_attack_timer > 0.0:
@@ -828,7 +828,7 @@ func _update_slime_encounter(delta: float) -> void:
 		if slime_attack_elapsed > 0.42 and slime_attack_elapsed < 0.70 and not slime_attack_resolved:
 			slime_attack_resolved = true
 			# Platforms are the intended escape route: a player above the floor is safe.
-			if player.y + PLAYER_SIZE.y > FLOOR_Y - 92.0: _take_hit("SLIME SPLAT")
+			if player.y + PLAYER_SIZE.y > FLOOR_Y - 92.0: _take_hit("ZOMBIE STRIKE")
 		if slime_attack_timer <= 0.0:
 			slime_attack_visible = false; slime_attack_cooldown = _music_beat() * 5.0
 		return
@@ -836,11 +836,11 @@ func _update_slime_encounter(delta: float) -> void:
 		return
 	var attack_start_beat := float(level.get("length_beats", 210.0)) * 0.5
 	if not slime_attack_phase_started and player.x >= START_X + attack_start_beat * _beat_width():
-		slime_attack_phase_started = true; slime_attack_next_beat = attack_start_beat + 8.0; slime_attack_visible = true; message = "THE SLIME TURNS BACK! USE THE PLATFORMS"; message_time = 1.7
+		slime_attack_phase_started = true; slime_attack_next_beat = attack_start_beat + 8.0; slime_attack_visible = true; message = "THE ZOMBIE TURNS BACK! USE THE PLATFORMS"; message_time = 1.7
 	if slime_attack_phase_started and slime_attack_next_beat >= 0.0 and player.x >= START_X + slime_attack_next_beat * _beat_width():
 		slime_attack_timer = 1.05; slime_attack_elapsed = 0.0; slime_attack_resolved = false; slime_attack_visible = true; slime_attack_next_beat += 20.0
 		if slime_attack_player != null and slime_attack_player.stream != null: slime_attack_player.play()
-		message = "SLIME ATTACK!"; message_time = 0.8
+		message = "ZOMBIE ATTACK!"; message_time = 0.8
 
 func _update_ghost_encounter(delta: float) -> void:
 	if str(level.get("theme", "")) != "metro" or not chase_started: return
@@ -1105,11 +1105,11 @@ func _draw_background() -> void:
 	var base_color: Color = Color("#17143e")
 	if theme == "metro": base_color = Color("#101b38")
 	if theme == "boss": base_color = Color("#24133f")
-	if theme == "slime": base_color = Color("#102d36")
+	if theme == "zombie": base_color = Color("#182b31")
 	draw_rect(Rect2(Vector2.ZERO, fill_size), base_color)
 	var band_count := int(ceil(fill_size.y / 80.0))
-	var band_start: Color = Color("#21194e") if theme == "skeleton" else (Color("#14264b") if theme == "metro" else (Color("#123b40") if theme == "slime" else Color("#32164f")))
-	var band_end: Color = Color("#583070") if theme == "skeleton" else (Color("#254d78") if theme == "metro" else (Color("#25836e") if theme == "slime" else Color("#8d295e")))
+	var band_start: Color = Color("#21194e") if theme == "skeleton" else (Color("#14264b") if theme == "metro" else (Color("#203d3c") if theme == "zombie" else Color("#32164f")))
+	var band_end: Color = Color("#583070") if theme == "skeleton" else (Color("#254d78") if theme == "metro" else (Color("#4d6b50") if theme == "zombie" else Color("#8d295e")))
 	for band in range(band_count): draw_rect(Rect2(0, band * 80, fill_size.x, 82), band_start.lerp(band_end, min(1.0, float(band) / 9.0)))
 	for x in range(-100, int(fill_size.x) + 1500, 100):
 		var sx := fmod(x - camera_x * 0.15, 1500.0); draw_line(Vector2(sx, 0), Vector2(sx - 260, VIEW.y), Color(0.7, 0.45, 0.95, 0.11), 1.0)
@@ -1119,11 +1119,11 @@ func _draw_background() -> void:
 	match theme:
 		"metro": _draw_metro_background(pulse, fill_size)
 		"boss": _draw_boss_background(pulse, fill_size)
-		"slime": _draw_slime_background(pulse, fill_size)
+		"zombie": _draw_zombie_background(pulse, fill_size)
 		_: _draw_kawaii_bone_carnival(pulse)
 	if theme == "skeleton": _draw_chaser()
 	elif theme == "metro": _draw_ghost_chaser()
-	elif theme == "slime": _draw_slime_chaser()
+	elif theme == "zombie": _draw_zombie_chaser()
 	draw_rect(Rect2(Vector2.ZERO, fill_size), Color(0.92, 0.96, 1.0, BEAT_FLASH_STRENGTH * _beat_pulse()))
 
 func _draw_beat_layers(fill_size: Vector2, pulse: float) -> void:
@@ -1181,22 +1181,24 @@ func _draw_boss_background(pulse: float, fill_size: Vector2) -> void:
 		var shard_y: float = 110.0 + fmod(background_time * (14.0 + i % 4) + i * 51.0, 360.0)
 		_draw_sparkle(Vector2(shard_x, shard_y), 4.0 + pulse * 3.0, Color("#f5e27e"))
 
-func _draw_slime_background(pulse: float, fill_size: Vector2) -> void:
-	# A separate candy-lab look for level 3: bubbles, drips and soft liquid waves.
-	for i in range(9):
-		var bubble_x := fmod(80.0 + i * 173.0 - camera_x * 0.12, fill_size.x + 260.0) - 130.0
-		var bubble_y := 150.0 + fmod(i * 71.0 + background_time * (10.0 + i), 310.0)
-		var bubble_r := 12.0 + float(i % 4) * 7.0 + pulse * 3.0
-		draw_circle(Vector2(bubble_x, bubble_y), bubble_r, Color(0.34, 1.0, 0.72, 0.08))
-		draw_arc(Vector2(bubble_x, bubble_y), bubble_r, 0.2, PI * 1.55, 18, Color(0.55, 1.0, 0.86, 0.28), 3.0)
-	for row in range(3):
-		var wave_y := 300.0 + row * 92.0
-		var points := PackedVector2Array()
-		for step in range(13):
-			var px := -40.0 + step * 112.0
-			var py := wave_y + sin(background_time * (1.0 + row * 0.2) + step * 0.9) * (8.0 + pulse * 4.0)
-			points.append(Vector2(px, py))
-		draw_polyline(points, Color(0.40, 1.0, 0.76, 0.10 + row * 0.02), 12.0)
+func _draw_zombie_background(pulse: float, fill_size: Vector2) -> void:
+	# A separate moonlit village look for level 3: fog, rooftops and drifting crows.
+	draw_circle(Vector2(fill_size.x * 0.78, 170.0), 76.0 + pulse * 5.0, Color(0.82, 0.94, 0.72, 0.13))
+	draw_circle(Vector2(fill_size.x * 0.78, 170.0), 58.0, Color("#d7e3bd"))
+	for i in range(7):
+		var house_x := fmod(i * 230.0 - camera_x * 0.16, fill_size.x + 300.0) - 150.0
+		var house_y := FLOOR_Y - 120.0 - float(i % 3) * 25.0
+		draw_rect(Rect2(house_x, house_y, 130.0, 120.0), Color(0.08, 0.14, 0.16, 0.66))
+		draw_colored_polygon(PackedVector2Array([Vector2(house_x - 18, house_y), Vector2(house_x + 65, house_y - 64), Vector2(house_x + 148, house_y)]), Color(0.10, 0.18, 0.18, 0.72))
+		for window in range(2): draw_rect(Rect2(house_x + 24.0 + window * 58.0, house_y + 35.0, 18.0, 26.0), Color(0.86, 0.72, 0.35, 0.28 + pulse * 0.16))
+	for i in range(5):
+		var fog_x := fmod(100.0 + i * 300.0 + background_time * (12.0 + i), fill_size.x + 260.0) - 130.0
+		var fog_y := 410.0 + sin(background_time * 0.7 + i) * 18.0
+		draw_line(Vector2(fog_x - 140.0, fog_y), Vector2(fog_x + 140.0, fog_y), Color(0.72, 0.88, 0.78, 0.10), 18.0)
+	for i in range(6):
+		var crow_x := fmod(i * 260.0 + background_time * 35.0 - camera_x * 0.08, fill_size.x + 180.0) - 90.0
+		var crow_y := 105.0 + float(i % 3) * 48.0 + sin(background_time * 2.0 + i) * 8.0
+		draw_arc(Vector2(crow_x, crow_y), 12.0, PI + 0.2, TAU - 0.2, 10, Color(0.08, 0.10, 0.12, 0.65), 3.0)
 
 func _draw_chaser() -> void:
 	var chase_mode: bool = _chase_active()
@@ -1233,7 +1235,7 @@ func _draw_ghost_chaser() -> void:
 			draw_line(Vector2(wave_x, y), Vector2(wave_x - 34.0, y + 30.0), Color(1.0, 0.68, 0.86, 0.72), 6.0)
 			draw_line(Vector2(wave_x - 34.0, y + 30.0), Vector2(wave_x, y + 60.0), Color(0.74, 0.55, 1.0, 0.72), 6.0)
 
-func _draw_slime_chaser() -> void:
+func _draw_zombie_chaser() -> void:
 	if not chase_started or not slime_attack_visible and slime_death_timer <= 0.0: return
 	var player_screen_x := player.x - camera_x
 	var slime_x := clampf(player_screen_x - 290.0, 110.0, 430.0)
@@ -1250,44 +1252,47 @@ func _draw_slime_chaser() -> void:
 	var scale := 1.0 if mode == "walk" else 1.08
 	if mode == "attack": scale = 1.16
 	draw_circle(Vector2(slime_x, slime_y - 56.0 + bob), 82.0 + _beat_pulse() * 10.0, Color(0.36, 1.0, 0.72, 0.10))
-	_draw_procedural_slime(Vector2(slime_x, slime_y + bob), scale, mode, progress)
+	_draw_procedural_zombie(Vector2(slime_x, slime_y + bob), scale, mode, progress)
 
-func _draw_procedural_slime(origin: Vector2, scale: float, mode: String, progress: float) -> void:
-	# Deterministic fallback animation: every frame is drawn, so there are no
-	# transparent/missing-frame flashes while the reference animation is unavailable.
-	var stretch := 1.0
-	var squash := 1.0
-	if mode == "walk":
-		stretch = 1.0 + sin(slime_walk_time * 7.0) * 0.07; squash = 1.0 / stretch
-	elif mode == "attack":
-		stretch = 1.0 + sin(clampf(progress, 0.0, 1.0) * PI) * 0.65; squash = 1.0 - sin(clampf(progress, 0.0, 1.0) * PI) * 0.24
-	elif mode == "death":
-		stretch = 1.0 + progress * 0.8; squash = max(0.18, 1.0 - progress * 0.8)
-	var body_size := Vector2(108.0 * scale * stretch, 78.0 * scale * squash)
-	var body_center := origin - Vector2(0.0, body_size.y * 0.5)
-	var body_color := Color("#70f2a0") if mode != "death" else Color("#c8ffe1")
-	var edge_color := Color("#1a8d72") if mode != "death" else Color("#70cfa1")
-	draw_set_transform(body_center, 0.0, Vector2.ONE)
-	draw_circle(Vector2(-body_size.x * 0.27, 0.0), body_size.y * 0.50, body_color)
-	draw_circle(Vector2(body_size.x * 0.27, 0.0), body_size.y * 0.50, body_color)
-	draw_rect(Rect2(-body_size.x * 0.27, -body_size.y * 0.50, body_size.x * 0.54, body_size.y), body_color)
-	draw_arc(Vector2.ZERO, body_size.y * 0.50, PI, TAU, 24, edge_color, 5.0)
+func _draw_procedural_zombie(origin: Vector2, scale: float, mode: String, progress: float) -> void:
+	# Stable drawn fallback for the supplied walk/idle/attack/death reference set.
+	# Every pose is generated, so there are no missing-frame flashes.
+	var death_progress := clampf(progress, 0.0, 1.0) if mode == "death" else 0.0
+	var lean := 0.0
+	if mode == "walk": lean = sin(slime_walk_time * 7.0) * 0.04
+	elif mode == "attack": lean = -0.24 * sin(clampf(progress, 0.0, 1.0) * PI)
+	elif mode == "death": lean = death_progress * 1.1
+	var alpha := 1.0 - death_progress * 0.35
+	var face := -1.0 if mode == "attack" or mode == "idle" or mode == "death" else 1.0
+	draw_set_transform(origin, lean, Vector2(scale, scale * (1.0 - death_progress * 0.5)))
+	# Boots and trousers give the chase a readable villager silhouette.
+	draw_line(Vector2(-18, -52), Vector2(-25 + sin(slime_walk_time * 7.0) * 12.0, 0), Color("#2d3546", alpha), 15.0)
+	draw_line(Vector2(18, -52), Vector2(25 - sin(slime_walk_time * 7.0) * 12.0, 0), Color("#2d3546", alpha), 15.0)
+	draw_line(Vector2(-25, 0), Vector2(-42, 2), Color("#161c2a", alpha), 9.0)
+	draw_line(Vector2(25, 0), Vector2(42, 2), Color("#161c2a", alpha), 9.0)
+	draw_rect(Rect2(-31, -108, 62, 60), Color("#68756d", alpha))
+	draw_line(Vector2(-28, -102), Vector2(28, -102), Color("#9aa889", alpha), 4.0)
+	var arm_swing := sin(slime_walk_time * 7.0) * 18.0
 	if mode == "attack":
-		for i in range(3):
-			var arm_x := body_size.x * (0.34 + i * 0.17)
-			draw_line(Vector2(arm_x, -body_size.y * 0.12), Vector2(arm_x + 46.0 * scale, -body_size.y * (0.18 + i * 0.14)), Color("#a8ffd0"), 10.0)
-	var eye_x := body_size.x * 0.18
-	draw_circle(Vector2(-eye_x, -body_size.y * 0.12), 9.0 * scale, Color("#182450"))
-	draw_circle(Vector2(eye_x, -body_size.y * 0.12), 9.0 * scale, Color("#182450"))
-	draw_circle(Vector2(-eye_x + 2, -body_size.y * 0.16), 3.0 * scale, Color.WHITE)
-	draw_circle(Vector2(eye_x + 2, -body_size.y * 0.16), 3.0 * scale, Color.WHITE)
-	draw_arc(Vector2(0.0, body_size.y * 0.04), body_size.x * 0.16, 0.1, PI - 0.1, 16, Color("#182450"), 4.0)
+		draw_line(Vector2(-20, -91), Vector2(-92, -66), Color("#8ca68e", alpha), 13.0)
+		draw_circle(Vector2(-96, -65), 13.0, Color("#a6c39b", alpha))
+	else:
+		draw_line(Vector2(-25, -91), Vector2(-45, -55 + arm_swing), Color("#8ca68e", alpha), 12.0)
+		draw_line(Vector2(25, -91), Vector2(45, -55 - arm_swing), Color("#8ca68e", alpha), 12.0)
+	var head := Vector2(0, -137)
+	draw_circle(head, 31.0, Color("#93b18d", alpha))
+	draw_colored_polygon(PackedVector2Array([Vector2(-32, -151), Vector2(-15, -177), Vector2(7, -166), Vector2(30, -177), Vector2(33, -145)]), Color("#3a4540", alpha))
+	draw_circle(head + Vector2(11.0 * face, -5.0), 5.0, Color("#d8f6b6", alpha))
+	draw_circle(head + Vector2(11.0 * face, -5.0), 2.0, Color("#4a242e", alpha))
+	draw_circle(head + Vector2(-9.0 * face, -3.0), 5.0, Color("#d8f6b6", alpha))
+	draw_circle(head + Vector2(-9.0 * face, -3.0), 2.0, Color("#4a242e", alpha))
+	draw_line(head + Vector2(-13, 12), head + Vector2(16, 10), Color("#4a242e", alpha), 4.0)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	if mode == "death":
-		for i in range(7):
-			var angle := i * TAU / 7.0 + progress * 2.0
-			var p := origin + Vector2.from_angle(angle) * (28.0 + progress * 95.0)
-			draw_circle(p, max(2.0, 10.0 * (1.0 - progress)), Color(0.44, 1.0, 0.66, 1.0 - progress))
+		for i in range(8):
+			var angle := i * TAU / 8.0 + death_progress * 2.0
+			var p := origin + Vector2.from_angle(angle) * (30.0 + death_progress * 105.0)
+			draw_circle(p, max(2.0, 7.0 * (1.0 - death_progress)), Color(0.58, 0.82, 0.52, 1.0 - death_progress))
 
 func _draw_ghost_sprite(sprite: Texture2D, origin: Vector2, scale: float, frame_index: int, tint: Color) -> void:
 	if sprite == null: return
