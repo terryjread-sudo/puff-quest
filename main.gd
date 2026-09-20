@@ -654,7 +654,7 @@ func _object_index_at(pos: Vector2) -> int:
 	return -1
 
 func _builder_player_rect() -> Rect2:
-	return Rect2(player.x - camera_x, player.y, PLAYER_SIZE)
+	return Rect2(Vector2(player.x - camera_x, player.y), PLAYER_SIZE)
 
 func _test_from_builder_position() -> void:
 	if not build_mode: return
