@@ -31,6 +31,8 @@ Open this folder in Godot 4.x and run `main.tscn`. The Web export can be configu
 - Every run starts with a six-second hazard-free mobile tutorial; the cube stays at the start line and the level clock restarts cleanly so the first obstacles approach normally afterward.
 - Level 1 then changes tempo and starts a giant kawaii skeleton chase halfway through; the giant slams its knife into the ground every eight beats to bounce the visible world.
 - Level 1 uses a local transparent sprite sheet of the supplied detailed running-skeleton reference, with twelve beat-synchronised poses for the giant leader and slam pose.
+- Level 2 starts a ghost-train pursuit after its opening section. The ghost sweeps forward on timed attacks with a clear DASH warning and a narrow dodge window; near the finish, DASH THE GHOST triggers its supplied death animation.
+- The supplied ghost animations are mirrored to face right and rasterized into transparent local sprite sheets for reliable Godot rendering.
 - Catapult launches now accelerate the cube forward over their beat duration instead of teleporting it.
 - Stars award diamonds, correct times-table answers award bonus diamonds, and the title-screen shop persists owned/equipped cube skins in browser local storage.
 - Each skin also changes the cube's trail, dash flare, landing burst, and shield colour; Prism Pulse adds animated orbiting accents.

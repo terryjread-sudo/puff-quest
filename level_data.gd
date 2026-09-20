@@ -9,7 +9,7 @@ const MUSIC_TRACKS: Array = ["cyberpunk-menu-music.mp3", "murder-on-the-metrorai
 static func level_catalog() -> Array:
 	return [
 		{"name": "BONE CARNIVAL", "subtitle": "Kawaii skeleton chase", "track": "cyberpunk-menu-music.mp3", "bpm": 120.0, "theme": "skeleton", "length_beats": 184.0, "chase_beat": 92.0},
-		{"name": "METRORAIL MAYHEM", "subtitle": "Ride the neon night train", "track": "murder-on-the-metrorail.ogg", "bpm": 116.0, "theme": "metro", "length_beats": 196.0, "chase_beat": -1.0},
+		{"name": "METRORAIL MAYHEM", "subtitle": "Ghost train pursuit", "track": "murder-on-the-metrorail.ogg", "bpm": 116.0, "theme": "metro", "length_beats": 196.0, "chase_beat": 72.0},
 		{"name": "CANDY BOSS BATTLE", "subtitle": "A sugary final showdown", "track": "boss-fight.ogg", "bpm": 128.0, "theme": "boss", "length_beats": 210.0, "chase_beat": -1.0}
 	]
 
