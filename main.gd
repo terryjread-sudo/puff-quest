@@ -727,6 +727,7 @@ func _builder_click(pos: Vector2, button: MouseButton) -> void:
 	if pos.y < 115.0:
 		if pos.x < 145.0: _export_level()
 		elif pos.x < 300.0: _import_level()
+		elif pos.x >= 1000.0: _test_from_builder_position()
 		return
 	var beat: float = max(0.0, round((camera_x + pos.x - START_X) / _beat_width() * 4.0) / 4.0)
 	var lane: float = clamp(round((FLOOR_Y - pos.y) / LANE_HEIGHT * 2.0) / 2.0, -1.0, 3.0)
@@ -1581,6 +1582,7 @@ func _draw_builder() -> void:
 		draw_line(Vector2(tx, 150), Vector2(tx, FLOOR_Y), Color("#f5e27e"), 5.0)
 		draw_circle(Vector2(tx, 160), 12.0, Color("#f5e27e")); draw_string(ThemeDB.fallback_font, Vector2(tx - 34, 190), "× %d" % selected_times_table, HORIZONTAL_ALIGNMENT_CENTER, 68, 16, Color("#fff1a8"))
 	draw_string(ThemeDB.fallback_font, Vector2(330, 92), "Yellow lines = timetable questions • drag cyan cube • T test from cube • Enter restart", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#ffffff"))
+	draw_rect(Rect2(1000, 56, 240, 44), Color("#55d68a")); draw_rect(Rect2(1000, 56, 240, 44), Color("#a8ffd0"), false, 3.0); draw_string(ThemeDB.fallback_font, Vector2(1018, 85), "TEST FROM CUBE", HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color("#102d36"))
 
 func _draw_finish() -> void:
 	draw_rect(Rect2(Vector2.ZERO, VIEW), Color(0.02, 0.03, 0.10, 0.90))
