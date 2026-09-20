@@ -1257,7 +1257,7 @@ func _draw_zombie_chaser() -> void:
 	if slime_death_timer > 0.0:
 		mode = "death"; progress = 1.0 - slime_death_timer / 1.7; sprite = zombie_death_sprite; frame_count = 12; cell_size = 501.0; flip_h = false; slime_x = clampf(player_screen_x + 160.0, 760.0, 1120.0); slime_y = FLOOR_Y - 50.0
 	elif slime_attack_phase_started:
-		slime_x = clampf(player_screen_x + 500.0, 980.0, 1180.0); slime_y = FLOOR_Y - 46.0
+		slime_x = clampf(player_screen_x + 500.0, 980.0, 1180.0); slime_y = FLOOR_Y - 46.0; flip_h = false
 		if slime_attack_timer > 0.0: mode = "attack"; progress = slime_attack_elapsed / 1.05; sprite = zombie_attack_sprite; frame_count = 4; cell_size = 421.0
 		else: mode = "idle"; sprite = zombie_idle_sprite; frame_count = 4; cell_size = 408.0
 	var bob := sin(slime_walk_time * 7.0) * 4.0 if mode == "walk" else 0.0
