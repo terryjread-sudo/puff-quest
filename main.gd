@@ -314,6 +314,11 @@ func _input(event: InputEvent) -> void:
 			var touch_choice: int = _quiz_choice_at(event.position)
 			if touch_choice >= 0: _answer_quiz(touch_choice)
 		return
+	if finished:
+		if event is InputEventMouseButton and event.pressed and _finish_menu_hit(event.position):
+			_return_to_menu(); return
+		if event is InputEventScreenTouch and event.pressed and _finish_menu_hit(event.position):
+			_return_to_menu(); return
 	if event.is_action_pressed("ui_cancel") and started:
 		if finished: _return_to_menu()
 		elif build_mode: _exit_builder()
@@ -467,6 +472,15 @@ func _shop_button_hit(pos: Vector2) -> bool:
 	var screen_rect := _shop_button_rect()
 	var logical_rect := Rect2(VIEW.x - SHOP_BUTTON_SIZE.x - 55.0, 28.0, SHOP_BUTTON_SIZE.x, SHOP_BUTTON_SIZE.y)
 	return screen_rect.grow(16.0).has_point(pos) or logical_rect.grow(16.0).has_point(pos)
+
+func _finish_menu_rect() -> Rect2:
+	return Rect2((VIEW.x - 320.0) * 0.5, VIEW.y - 94.0, 320.0, 60.0)
+
+func _finish_menu_hit(pos: Vector2) -> bool:
+	var logical_rect := _finish_menu_rect()
+	var screen_size := get_viewport_rect().size
+	var screen_rect := Rect2((screen_size.x - 320.0) * 0.5, screen_size.y - 94.0, 320.0, 60.0)
+	return logical_rect.grow(16.0).has_point(pos) or screen_rect.grow(16.0).has_point(pos)
 
 func _touch_jump_rect() -> Rect2:
 	var screen_size := get_viewport_rect().size
@@ -1236,7 +1250,10 @@ func _draw_finish() -> void:
 	_draw_finish_stat(Rect2(220, 425, 250, 92), "QUIZZES SOLVED", "%d" % quiz_points, Color("#b06cff"))
 	_draw_finish_stat(Rect2(515, 425, 250, 92), "BEST COMBO", "x%d" % run_best_combo, Color("#ffffff"))
 	_draw_finish_stat(Rect2(810, 425, 250, 92), "DASHES", "%d" % run_dashes, Color("#d7b5ff"))
-	draw_string(ThemeDB.fallback_font, Vector2(0, 600), "PRESS SPACE TO PLAY AGAIN  •  ESC TO LEVELS", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 18, Color("#a9b8ef"))
+	var menu_button := _finish_menu_rect()
+	draw_rect(menu_button, Color("#26336e")); draw_rect(menu_button, Color("#7cf5ff"), false, 3.0)
+	draw_string(ThemeDB.fallback_font, menu_button.position + Vector2(0, 38), "TOUCH: BACK TO LEVELS", HORIZONTAL_ALIGNMENT_CENTER, menu_button.size.x, 18, Color("#ffffff"))
+	draw_string(ThemeDB.fallback_font, Vector2(0, 625), "SPACE: PLAY AGAIN  •  ESC: LEVELS", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 16, Color("#a9b8ef"))
 
 func _draw_finish_stat(rect: Rect2, label: String, value: String, color: Color) -> void:
 	draw_rect(rect, Color("#182450")); draw_rect(rect, Color(color, 0.55), false, 3.0)

@@ -88,6 +88,8 @@ assert.match(game, /func _spawn_skin_burst/);
 assert.match(game, /func _draw_effect_particle/);
 assert.match(game, /run_perfect_jumps/);
 assert.match(game, /func _draw_finish_stat/);
+assert.match(game, /func _finish_menu_hit/);
+assert.match(game, /TOUCH: BACK TO LEVELS/);
 assert.match(game, /DIAMONDS EARNED/);
 assert.match(game, /ON-BEAT ACCURACY/);
 assert.match(game, /MISSED OPPORTUNITIES/);
