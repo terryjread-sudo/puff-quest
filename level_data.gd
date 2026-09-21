@@ -41,6 +41,18 @@ static func campaign_level(index: int) -> Dictionary:
 		objects.append(_object("moving_platform", 58.0, 1.0, {"travel_beats": 4.0, "distance_lanes": 2.0}, number)); number += 1
 		objects.append(_object("gravity_portal", 88.0, 0.0, {"duration_beats": 8.0}, number)); number += 1
 		objects.append(_object("speed_ring", 118.0, 1.0, {"multiplier": 1.25, "duration_beats": 4.0}, number)); number += 1
+		# Hand-authored split route: the low route is dangerous, while the raised
+		# route offers a safer line with extra stars for confident players.
+		number = _add_pattern(objects, number, [
+			["platform", 60.0, 1.15, {"width": 2.7, "height": 0.25}],
+			["star", 60.5, 1.85, {}],
+			["spike", 61.5, 0.0, {}],
+			["platform", 63.0, 1.35, {"width": 2.7, "height": 0.25}],
+			["star", 63.5, 2.05, {}],
+			["spike", 64.5, 0.0, {}],
+			["platform", 66.0, 1.05, {"width": 2.7, "height": 0.25}],
+			["star", 66.5, 1.65, {}]
+		])
 	elif safe_index == 1:
 		for beat in range(4, 196):
 			if beat % 6 == 0 or beat % 17 == 0:
@@ -58,6 +70,18 @@ static func campaign_level(index: int) -> Dictionary:
 		objects.append(_object("speed_ring", 82.0, 1.0, {"multiplier": 1.3, "duration_beats": 5.0}, number)); number += 1
 		objects.append(_object("gravity_portal", 108.0, 0.0, {"duration_beats": 7.0}, number)); number += 1
 		objects.append(_object("bounce_pad", 145.0, 0.0, {"strength": 1.1}, number)); number += 1
+		# Metro fork: players can stay low and dash through the rail hazards or
+		# climb the marked platform route for collectibles.
+		number = _add_pattern(objects, number, [
+			["platform", 94.0, 1.0, {"width": 2.5, "height": 0.25}],
+			["star", 94.5, 1.7, {}],
+			["spike", 95.5, 0.0, {}],
+			["platform", 97.0, 1.4, {"width": 2.5, "height": 0.25}],
+			["star", 97.5, 2.1, {}],
+			["spike", 98.5, 0.0, {}],
+			["platform", 100.0, 1.0, {"width": 2.5, "height": 0.25}],
+			["star", 100.5, 1.7, {}]
+		])
 	else:
 		for beat in range(4, 210):
 			if beat % 5 == 0 or beat % 9 == 0:
@@ -82,7 +106,27 @@ static func campaign_level(index: int) -> Dictionary:
 			var platform_lane: float = 1.0 if int(platform_beat) % 2 == 0 else 1.5
 			var platform_width: float = 2.8 if platform_beat >= 111.0 else 2.0
 			objects.append(_object("platform", platform_beat, platform_lane, {"width": platform_width, "height": 0.25}, number)); number += 1
+		# A final village fork gives players a choice between a risky diamond line
+		# and the safer ground route before the alternating boss attacks.
+		number = _add_pattern(objects, number, [
+			["platform", 102.0, 1.15, {"width": 2.8, "height": 0.25}],
+			["star", 102.5, 1.85, {}],
+			["spike", 103.5, 0.0, {}],
+			["platform", 106.0, 1.45, {"width": 2.8, "height": 0.25}],
+			["star", 106.5, 2.15, {}],
+			["spike", 107.5, 0.0, {}],
+			["platform", 110.0, 1.15, {"width": 2.8, "height": 0.25}],
+			["star", 110.5, 1.85, {}]
+		])
 	return {"version": VERSION, "level_index": safe_index, "display_name": meta["name"], "subtitle": meta["subtitle"], "theme": meta["theme"], "chase_beat": meta["chase_beat"], "music": {"track": meta["track"], "bpm": meta["bpm"], "beat_offset_seconds": 0.0}, "length_beats": length_beats, "objects": objects, "triggers": triggers}
+
+static func _add_pattern(objects: Array, number: int, pattern: Array) -> int:
+	for entry in pattern:
+		if entry.size() < 3: continue
+		var properties: Dictionary = entry[3] if entry.size() > 3 and entry[3] is Dictionary else {}
+		objects.append(_object(str(entry[0]), float(entry[1]), float(entry[2]), properties, number))
+		number += 1
+	return number
 
 static func _object(kind: String, beat: float, lane: float, properties: Dictionary, number: int) -> Dictionary:
 	return {"id": "%s-%03d" % [kind, number], "type": kind, "beat": beat, "lane": lane, "properties": properties}

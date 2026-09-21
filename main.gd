@@ -128,6 +128,9 @@ var ghost_attack_next_beat := -1.0
 var ghost_attack_phase_started := false
 var ghost_attack_resolved := false
 var ghost_attack_dodged := false
+var ghost_attack_pattern := 0
+var ghost_attack_count := 0
+var ghost_wave_hit := false
 var ghost_wave_active := false
 var ghost_wave_x := -1.0
 var ghost_wave_previous_x := -1.0
@@ -154,12 +157,18 @@ var zombie_attack_wave_previous_x := -1.0
 var zombie_attack_wave_hit := false
 var zombie_attack_dodge_awarded := false
 var zombie_attack_is_final := false
+var zombie_attack_pattern := 0
 var slime_end_death_started := false
 var slime_death_timer := 0.0
 var music_last_position := 0.0
 var music_expected_playing := false
 var audio_resync_time := 0.0
 var audio_resync_position := 0.0
+var music_restart_pending := false
+var music_finished_connection := false
+var beat_feedback_time := 0.0
+var beat_feedback_label := ""
+var beat_feedback_color := Color("#7cf5ff")
 var undo_stack: Array = []
 var redo_stack: Array = []
 var clipboard_object: Dictionary = {}
@@ -210,8 +219,8 @@ func _apply_level(data: Dictionary) -> void:
 	consumed.clear(); triggered.clear(); catapult_state.clear()
 	gravity_sign = 1.0; gravity_until = 0.0; speed_boost_multiplier = 1.0
 	chase_started = false; chase_flash = 0.0; slam_next_beat = -1.0; slam_offset = 0.0; slam_velocity = 0.0; slam_timer = 0.0; slam_flash = 0.0
-	ghost_attack_timer = 0.0; ghost_attack_elapsed = 0.0; ghost_attack_next_beat = -1.0; ghost_attack_phase_started = false; ghost_attack_resolved = false; ghost_attack_dodged = false; ghost_wave_active = false; ghost_wave_x = -1.0; ghost_wave_previous_x = -1.0; ghost_wave_offsets.clear(); ghost_final_started = false; ghost_final_timer = 0.0; ghost_final_resolved = false; ghost_defeated_pending = false; ghost_end_death_started = false; ghost_death_timer = 0.0
-	slime_walk_time = 0.0; slime_attack_timer = 0.0; slime_attack_elapsed = 0.0; slime_attack_resolved = false; slime_attack_next_beat = -1.0; slime_attack_phase_started = false; slime_attack_visible = true; slime_attack_cooldown = 0.0; _reset_zombie_attack_state(); slime_end_death_started = false; slime_death_timer = 0.0
+	ghost_attack_timer = 0.0; ghost_attack_elapsed = 0.0; ghost_attack_next_beat = -1.0; ghost_attack_phase_started = false; ghost_attack_resolved = false; ghost_attack_dodged = false; ghost_attack_pattern = 0; ghost_attack_count = 0; ghost_wave_hit = false; ghost_wave_active = false; ghost_wave_x = -1.0; ghost_wave_previous_x = -1.0; ghost_wave_offsets.clear(); ghost_final_started = false; ghost_final_timer = 0.0; ghost_final_resolved = false; ghost_defeated_pending = false; ghost_end_death_started = false; ghost_death_timer = 0.0
+	slime_walk_time = 0.0; slime_attack_timer = 0.0; slime_attack_elapsed = 0.0; slime_attack_resolved = false; slime_attack_next_beat = -1.0; slime_attack_phase_started = false; slime_attack_visible = true; slime_attack_cooldown = 0.0; _reset_zombie_attack_state(); zombie_attack_pattern = 0; slime_end_death_started = false; slime_death_timer = 0.0
 	checkpoint_beats = [0.0]
 	for object in objects:
 		if object["type"] == "checkpoint": checkpoint_beats.append(float(object["beat"]))
@@ -221,42 +230,68 @@ func _apply_level(data: Dictionary) -> void:
 func _setup_music() -> void:
 	music_player = AudioStreamPlayer.new()
 	add_child(music_player)
+	if not music_finished_connection:
+		music_player.finished.connect(_on_music_finished)
+		music_finished_connection = true
 	_load_level_music()
 
 func _load_level_music() -> void:
 	var stream: AudioStream = load("res://assets/" + str(level["music"]["track"])) as AudioStream
 	if stream == null: return
+	music_player.stop()
 	if stream is AudioStreamMP3: (stream as AudioStreamMP3).loop = true
 	if stream is AudioStreamOggVorbis: (stream as AudioStreamOggVorbis).loop = true
 	music_player.stream = stream
 	music_started = false
 	music_last_position = 0.0
 	music_expected_playing = false
+	music_restart_pending = false
+	audio_resync_time = 0.0
 	music_player.stream_paused = false
 
 func _ensure_music() -> void:
 	if music_player == null or music_player.stream == null: return
 	music_expected_playing = true
-	if not music_player.playing: music_player.play(music_last_position)
+	if not music_player.playing or music_player.stream_paused:
+		_resume_music(music_last_position)
 	music_player.stream_paused = false
 	music_started = true
 
 func _resume_music(position: float = -1.0) -> void:
 	if music_player == null or music_player.stream == null: return
 	if position >= 0.0: music_last_position = position
+	var stream_length: float = music_player.stream.get_length()
+	if stream_length > 0.0 and music_last_position >= stream_length - 0.20:
+		music_last_position = 0.0
 	music_expected_playing = true
 	audio_resync_time = 0.0
+	music_restart_pending = false
 	music_player.stream_paused = false
-	music_player.play(music_last_position)
+	music_player.stop()
+	music_player.play(clampf(music_last_position, 0.0, max(0.0, stream_length - 0.05)) if stream_length > 0.0 else music_last_position)
 	music_started = true
+
+func _on_music_finished() -> void:
+	if not music_expected_playing or paused or build_mode or finished: return
+	music_last_position = 0.0
+	music_restart_pending = true
 
 func _maintain_music() -> void:
 	if music_player == null or music_player.stream == null or not started or paused or build_mode or not music_expected_playing: return
+	if music_restart_pending:
+		_resume_music(0.0)
+		return
 	if music_player.playing and not music_player.stream_paused:
-		music_last_position = music_player.get_playback_position()
+		var current_position: float = music_player.get_playback_position()
+		if current_position >= 0.0:
+			# A looping stream legitimately jumps back near zero. Keep that new
+			# position instead of treating it as a failed playback and restarting.
+			music_last_position = current_position
 		return
 	if audio_resync_time <= 0.0:
 		audio_resync_position = music_last_position
+		var stream_length: float = music_player.stream.get_length()
+		if stream_length > 0.0 and audio_resync_position >= stream_length - 0.20: audio_resync_position = 0.0
 		audio_resync_time = AUDIO_RESYNC_SECONDS
 
 func _finish_audio_resync() -> void:
@@ -279,6 +314,11 @@ func _beat_pulse() -> float:
 	var phase: float = fmod(max(0.0, clock + float(level["music"].get("beat_offset_seconds", 0.0))), beat) / beat
 	return pow(max(0.0, cos(phase * TAU)), 12.0)
 
+func _beat_phase() -> float:
+	var beat: float = _music_beat()
+	var clock: float = run_time if started else background_time
+	return fmod(max(0.0, clock + float(level["music"].get("beat_offset_seconds", 0.0))), beat) / beat
+
 func _pace_multiplier() -> float:
 	return 1.12 if _chase_active() else 1.0
 
@@ -286,6 +326,7 @@ func _process(delta: float) -> void:
 	var dt: float = min(delta, 0.05)
 	background_time += dt
 	message_time = max(0.0, message_time - dt); flash = max(0.0, flash - dt)
+	beat_feedback_time = max(0.0, beat_feedback_time - dt)
 	quiz_input_lock = max(0.0, quiz_input_lock - dt)
 	invulnerability = max(0.0, invulnerability - dt)
 	checkpoint_flash = max(0.0, checkpoint_flash - dt)
@@ -825,7 +866,7 @@ func _start_chase() -> void:
 	slam_next_beat = chase_beat + SLAM_INTERVAL_BEATS
 
 func _start_ghost_chase() -> void:
-	chase_started = true; chase_flash = 1.2; ghost_attack_next_beat = -1.0; ghost_attack_phase_started = false; ghost_attack_timer = 0.0; ghost_attack_elapsed = 0.0; ghost_attack_resolved = false; ghost_wave_active = false; ghost_wave_x = -1.0; ghost_wave_previous_x = -1.0; ghost_wave_offsets.clear(); ghost_final_started = false; ghost_final_timer = 0.0; ghost_final_resolved = false; ghost_death_timer = 0.0
+	chase_started = true; chase_flash = 1.2; ghost_attack_next_beat = -1.0; ghost_attack_phase_started = false; ghost_attack_timer = 0.0; ghost_attack_elapsed = 0.0; ghost_attack_resolved = false; ghost_attack_pattern = 0; ghost_attack_count = 0; ghost_wave_hit = false; ghost_wave_active = false; ghost_wave_x = -1.0; ghost_wave_previous_x = -1.0; ghost_wave_offsets.clear(); ghost_final_started = false; ghost_final_timer = 0.0; ghost_final_resolved = false; ghost_death_timer = 0.0
 	message = "A GHOST IS HUNTING YOU"; message_time = 1.5
 
 func _start_slime_chase() -> void:
@@ -870,21 +911,26 @@ func _update_zombie_encounter(delta: float) -> void:
 		slime_attack_phase_started = true; slime_attack_next_beat = attack_start_beat + 8.0; slime_attack_visible = true; message = "THE ZOMBIE TURNS BACK! USE THE PLATFORMS"; message_time = 1.7
 	if slime_attack_phase_started and slime_attack_next_beat >= 0.0 and player.x >= START_X + slime_attack_next_beat * _beat_width():
 		zombie_attack_is_final = slime_attack_next_beat >= float(level.get("length_beats", 210.0)) - 24.0
+		zombie_attack_pattern = int(round((slime_attack_next_beat - attack_start_beat) / 20.0)) % 2
 		zombie_attack_warning = _music_beat() * (3.0 if zombie_attack_is_final else 2.0); zombie_attack_dodge_awarded = false; slime_attack_visible = true; slime_attack_next_beat += 20.0
-		message = "FINAL ZOMBIE WIND-UP!" if zombie_attack_is_final else "ZOMBIE WIND-UP • GET READY"; message_time = 1.0
+		message = "FINAL ZOMBIE WIND-UP!" if zombie_attack_is_final else ("ZOMBIE WIND-UP • JUMP" if zombie_attack_pattern == 0 else "ZOMBIE WIND-UP • STAY LOW"); message_time = 1.0
 
 func _reset_zombie_attack_state() -> void:
-	zombie_attack_warning = 0.0; zombie_attack_recovery = 0.0; zombie_attack_wave_active = false; zombie_attack_wave_x = -1.0; zombie_attack_wave_previous_x = -1.0; zombie_attack_wave_hit = false; zombie_attack_dodge_awarded = false; zombie_attack_is_final = false
+	zombie_attack_warning = 0.0; zombie_attack_recovery = 0.0; zombie_attack_wave_active = false; zombie_attack_wave_x = -1.0; zombie_attack_wave_previous_x = -1.0; zombie_attack_wave_hit = false; zombie_attack_dodge_awarded = false; zombie_attack_is_final = false; zombie_attack_pattern = 0
 
 func _begin_zombie_attack() -> void:
 	slime_attack_timer = 1.12; slime_attack_elapsed = 0.0; slime_attack_resolved = false; slime_attack_visible = true; zombie_attack_wave_active = true; zombie_attack_wave_hit = false
 	var player_screen_x := player.x - camera_x
 	zombie_attack_wave_x = clampf(player_screen_x + 520.0, 700.0, 1190.0); zombie_attack_wave_previous_x = zombie_attack_wave_x
 	if slime_attack_player != null and slime_attack_player.stream != null: slime_attack_player.play()
-	message = "FINAL ZOMBIE STRIKE! JUMP!" if zombie_attack_is_final else "ZOMBIE STRIKE! JUMP OR USE A PLATFORM"; message_time = 0.85
+	message = "FINAL ZOMBIE STRIKE! JUMP!" if zombie_attack_is_final else ("ZOMBIE STRIKE! JUMP OR USE A PLATFORM" if zombie_attack_pattern == 0 else "ZOMBIE STRIKE! STAY LOW OR DASH"); message_time = 0.85
 
 func _zombie_player_is_safe() -> bool:
-	return player.y + PLAYER_SIZE.y <= FLOOR_Y - 92.0
+	if dash_left > 0.0: return true
+	var player_bottom := player.y + PLAYER_SIZE.y
+	if zombie_attack_pattern == 0:
+		return player_bottom <= FLOOR_Y - 92.0
+	return player_bottom >= FLOOR_Y - 140.0
 
 func _award_zombie_dodge() -> void:
 	if zombie_attack_dodge_awarded: return
@@ -911,8 +957,12 @@ func _update_ghost_encounter(delta: float) -> void:
 		return
 	if ghost_wave_active:
 		ghost_wave_previous_x = ghost_wave_x; ghost_wave_x -= 1180.0 * delta
-		if ghost_wave_previous_x >= player.x - camera_x and ghost_wave_x <= player.x - camera_x:
-			velocity.y = JUMP_VELOCITY * 0.72 * gravity_sign; _spawn_skin_burst(player + PLAYER_SIZE * 0.5, 7)
+		if ghost_wave_previous_x >= player.x - camera_x and ghost_wave_x <= player.x - camera_x and not ghost_wave_hit:
+			ghost_wave_hit = true
+			if _ghost_player_is_safe():
+				score += 160; _combo_event("GHOST DODGE"); _spawn_skin_burst(player + PLAYER_SIZE * 0.5, 9)
+			else:
+				_take_hit("GHOST SHOCKWAVE")
 		for object in objects + runtime_objects:
 			var object_screen_x := _object_x(object) - camera_x
 			if ghost_wave_previous_x >= object_screen_x and ghost_wave_x <= object_screen_x and object_screen_x > -80.0 and object_screen_x < VIEW.x + 80.0:
@@ -928,8 +978,19 @@ func _update_ghost_encounter(delta: float) -> void:
 		_begin_ghost_attack()
 
 func _begin_ghost_attack() -> void:
-	ghost_attack_timer = 1.02; ghost_attack_elapsed = 0.0; ghost_attack_resolved = false; ghost_wave_active = true; ghost_wave_x = VIEW.x + 120.0; ghost_wave_previous_x = ghost_wave_x; ghost_attack_next_beat += 18.0
+	ghost_attack_pattern = ghost_attack_count % 2
+	ghost_attack_count += 1
+	ghost_attack_timer = 1.02; ghost_attack_elapsed = 0.0; ghost_attack_resolved = false; ghost_wave_hit = false; ghost_wave_active = true; ghost_wave_x = VIEW.x + 120.0; ghost_wave_previous_x = ghost_wave_x; ghost_attack_next_beat += 18.0
 	if ghost_woosh_player != null and ghost_woosh_player.stream != null: ghost_woosh_player.play()
+	message = "GHOST WAVE • JUMP" if ghost_attack_pattern == 0 else "GHOST WAVE • STAY LOW"
+	message_time = 1.0
+
+func _ghost_player_is_safe() -> bool:
+	if dash_left > 0.0: return true
+	var player_bottom := player.y + PLAYER_SIZE.y
+	if ghost_attack_pattern == 0:
+		return player_bottom <= FLOOR_Y - 78.0
+	return player_bottom >= FLOOR_Y - 145.0
 
 func _start_ghost_final() -> void:
 	ghost_final_started = true; ghost_final_timer = 3.0; ghost_final_resolved = false; message = "DASH THE GHOST!"; message_time = 3.0
@@ -974,7 +1035,25 @@ func _check_triggers() -> void:
 func _start_quiz(trigger: Dictionary) -> void:
 	quiz_snapshot = {"player": player, "velocity": velocity, "camera_x": camera_x, "run_time": run_time, "gravity_sign": gravity_sign, "gravity_until": gravity_until, "speed_until": speed_until, "catapult_boost_left": catapult_boost_left, "music_position": music_player.get_playback_position() if music_player != null else 0.0}
 	quiz_active = true; quiz_input_lock = 0.18; quiz_feedback_time = 0.0; quiz_time = 10.0; quiz_table = selected_times_table; quiz_number = rng.randi_range(1, 12)
-	var correct: int = quiz_number * quiz_table; quiz_choices = [correct, correct + rng.randi_range(1, 3), max(2, correct - rng.randi_range(1, 3))]; quiz_choices.shuffle(); quiz_correct_index = quiz_choices.find(correct); message = "TIME SHIFT"; message_time = 1.0
+	var correct: int = quiz_number * quiz_table
+	quiz_choices = _build_quiz_choices(correct)
+	quiz_correct_index = quiz_choices.find(correct); message = "TIME SHIFT"; message_time = 1.0
+
+func _build_quiz_choices(correct: int) -> Array[int]:
+	# Build distractors from a shuffled candidate pool so low answers such as
+	# 2 × 1 = 2 can never create duplicate buttons or a false wrong answer.
+	var candidates: Array[int] = []
+	for offset in [1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6]:
+		var candidate: int = correct + int(offset)
+		if candidate >= 1 and not candidates.has(candidate) and candidate != correct:
+			candidates.append(candidate)
+	candidates.shuffle()
+	var choices: Array[int] = [correct]
+	for candidate in candidates:
+		if choices.size() >= 3: break
+		choices.append(candidate)
+	choices.shuffle()
+	return choices
 
 func _answer_quiz(choice: int) -> void:
 	if not quiz_active: return
@@ -1052,16 +1131,25 @@ func _jump_beat_event() -> void:
 	var beat: float = _music_beat()
 	var error: float = _beat_distance()
 	if error <= beat * 0.10:
+		beat_feedback_label = "PERFECT"
+		beat_feedback_color = Color("#7cf5ff")
+		beat_feedback_time = 0.85
 		run_perfect_jumps += 1; _spawn_skin_burst(player + PLAYER_SIZE * 0.5, 8)
 		_combo_event("PERFECT JUMP")
 		score += 150
 		message = "PERFECT JUMP +150"
 	elif error <= beat * 0.24:
+		beat_feedback_label = "GOOD"
+		beat_feedback_color = Color("#a8ffd0")
+		beat_feedback_time = 0.70
 		run_good_jumps += 1; _spawn_skin_burst(player + PLAYER_SIZE * 0.5, 5)
 		_combo_event("GOOD JUMP")
 		score += 60
 		message = "GOOD JUMP +60"
 	else:
+		beat_feedback_label = "OFF BEAT"
+		beat_feedback_color = Color("#ff9dbc")
+		beat_feedback_time = 0.55
 		_combo_event("JUMP")
 
 func _combo_event(label: String) -> void:
@@ -1280,10 +1368,13 @@ func _draw_ghost_chaser() -> void:
 	_draw_ghost_sprite(sprite, ghost_origin, ghost_scale, frame_index, Color(1.0, 1.0, 1.0, 0.98))
 	if ghost_wave_active:
 		var wave_x := ghost_wave_x
+		var wave_base_y := FLOOR_Y - 28.0 if ghost_attack_pattern == 0 else FLOOR_Y - 188.0
 		for i in range(7):
-			var y := 150.0 + i * 62.0
+			var y := wave_base_y - 180.0 + i * 62.0
 			draw_line(Vector2(wave_x, y), Vector2(wave_x - 34.0, y + 30.0), Color(1.0, 0.68, 0.86, 0.72), 6.0)
 			draw_line(Vector2(wave_x - 34.0, y + 30.0), Vector2(wave_x, y + 60.0), Color(0.74, 0.55, 1.0, 0.72), 6.0)
+		var wave_label := "JUMP" if ghost_attack_pattern == 0 else "STAY LOW"
+		draw_string(ThemeDB.fallback_font, Vector2(wave_x - 65.0, wave_base_y - 215.0), wave_label, HORIZONTAL_ALIGNMENT_CENTER, 130.0, 16, Color("#fff1a8"))
 
 func _draw_zombie_chaser() -> void:
 	if not chase_started or not slime_attack_visible and slime_death_timer <= 0.0: return
@@ -1322,10 +1413,11 @@ func _draw_zombie_chaser() -> void:
 		draw_arc(Vector2(slime_x - 12.0, FLOOR_Y - 58.0), 70.0 * warning_pulse, 0.0, TAU, 28, Color(1.0, 0.42, 0.48, 0.78), 5.0)
 	if zombie_attack_wave_active:
 		for row in range(5):
-			var wave_y := FLOOR_Y - 18.0 - row * 52.0
+			var wave_base_y := FLOOR_Y - 18.0 if zombie_attack_pattern == 0 else FLOOR_Y - 178.0
+			var wave_y := wave_base_y - row * 52.0
 			draw_line(Vector2(zombie_attack_wave_x, wave_y), Vector2(zombie_attack_wave_x - 28.0, wave_y - 18.0), Color(1.0, 0.32, 0.42, 0.82), 7.0)
 			draw_line(Vector2(zombie_attack_wave_x - 28.0, wave_y - 18.0), Vector2(zombie_attack_wave_x - 56.0, wave_y), Color(1.0, 0.72, 0.42, 0.72), 5.0)
-		draw_arc(Vector2(zombie_attack_wave_x - 28.0, FLOOR_Y + 2.0), 42.0, PI, TAU, 18, Color(1.0, 0.42, 0.48, 0.75), 6.0)
+		draw_arc(Vector2(zombie_attack_wave_x - 28.0, FLOOR_Y + 2.0 if zombie_attack_pattern == 0 else FLOOR_Y - 158.0), 42.0, PI, TAU, 18, Color(1.0, 0.42, 0.48, 0.75), 6.0)
 
 func _draw_zombie_sprite(sprite: Texture2D, origin: Vector2, scale: float, frame_index: int, frame_count: int, cell_size: float, flip_h: bool, tint: Color) -> void:
 	if sprite == null: return
@@ -1463,11 +1555,21 @@ func _draw_world() -> void:
 	for particle in particles: _draw_effect_particle(particle, particle["p"] - Vector2(camera_x, 0))
 	var center := player - Vector2(camera_x, 0) + PLAYER_SIZE * 0.5
 	_draw_player(center)
+	_draw_beat_feedback(center)
 	if shield_hits > 0 or invulnerability > 0.0:
 		var shield_color := Color(str(_current_skin().get("shield", "#a8ffd0"))) if shield_hits > 0 else Color("#ffffff")
 		draw_arc(center, 38.0 + sin(background_time * 8.0) * 3.0, 0.0, TAU, 32, shield_color, 4.0)
 	if crash_timer > 0.0:
 		draw_circle(player - Vector2(camera_x, 0) + PLAYER_SIZE * 0.5, 42.0 + sin(background_time * 24.0) * 5.0, Color(1.0, 0.25, 0.45, 0.12))
+
+func _draw_beat_feedback(center: Vector2) -> void:
+	var pulse := _beat_pulse()
+	var beat_radius := 47.0 + pulse * 10.0
+	draw_arc(center, beat_radius, -PI * 0.85, -PI * 0.15, 18, Color(0.66, 1.0, 0.83, 0.28 + pulse * 0.38), 3.0)
+	if beat_feedback_time > 0.0:
+		var alpha := clampf(beat_feedback_time / 0.35, 0.0, 1.0)
+		draw_arc(center, 58.0 + (0.85 - beat_feedback_time) * 36.0, 0.0, TAU, 28, Color(beat_feedback_color, alpha * 0.85), 5.0)
+		draw_string(ThemeDB.fallback_font, center + Vector2(-70.0, -58.0), beat_feedback_label, HORIZONTAL_ALIGNMENT_CENTER, 140.0, 18, Color(beat_feedback_color, alpha))
 
 func _draw_player(center: Vector2) -> void:
 	var skin: Dictionary = _current_skin()
@@ -1546,6 +1648,13 @@ func _draw_checkpoint_marker() -> void:
 
 func _draw_object(object: Dictionary) -> void:
 	var kind: String = object["type"]; var rect := _object_rect(object); rect.position.x -= camera_x; var center := rect.get_center(); var slam_floor := FLOOR_Y + (slam_offset if chase_started else 0.0) + float(ghost_wave_offsets.get(object["id"], {}).get("offset", 0.0))
+	if started and intro_time_left <= 0.0 and not quiz_active and (kind == "spike" or kind == "block" or kind == "saw"):
+		var beats_away := (float(_object_x(object)) - player.x) / max(1.0, _beat_width())
+		if beats_away > 0.0 and beats_away <= 1.75:
+			var telegraph_alpha := clampf(1.0 - beats_away / 1.75, 0.22, 0.82)
+			draw_circle(Vector2(center.x, rect.position.y - 18.0), 8.0 + _beat_pulse() * 4.0, Color(1.0, 0.72, 0.42, telegraph_alpha * 0.30))
+			draw_arc(Vector2(center.x, rect.position.y - 18.0), 13.0 + _beat_pulse() * 4.0, 0.0, TAU, 16, Color(1.0, 0.72, 0.42, telegraph_alpha), 2.0)
+			draw_string(ThemeDB.fallback_font, Vector2(center.x - 14.0, rect.position.y - 31.0), "!", HORIZONTAL_ALIGNMENT_CENTER, 28.0, 16, Color(1.0, 0.90, 0.58, telegraph_alpha))
 	match kind:
 		"spike":
 			draw_colored_polygon(PackedVector2Array([Vector2(rect.position.x, slam_floor), Vector2(center.x, rect.position.y), Vector2(rect.end.x, slam_floor)]), Color("#ed496f"))
@@ -1585,12 +1694,22 @@ func _draw_object(object: Dictionary) -> void:
 func _draw_hud() -> void:
 	draw_rect(Rect2(24, 20, 690, 80), Color(0.04, 0.06, 0.16, 0.84)); draw_string(ThemeDB.fallback_font, Vector2(44, 52), "%02d  %s" % [level_index + 1, str(level["display_name"])], HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, Vector2(44, 80), "SCORE %06d    COMBO x%d    SHIELD %d/3    ♦ %03d" % [score, combo, shield_hits, diamonds], HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#f5e27e"))
 	draw_string(ThemeDB.fallback_font, Vector2(VIEW.x - 300, 46), "%d BPM  •  %s" % [int(level["music"]["bpm"]), "BUILDER" if build_mode else ("SLOWED" if quiz_active else ("CHASE" if _chase_active() else "ON BEAT"))], HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color("#cbbaff")); draw_string(ThemeDB.fallback_font, Vector2(VIEW.x - 300, 76), "DISTANCE %04d m" % int(player.x / 10.0), HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#8fa8df"))
+	var beat_rect := Rect2(VIEW.x - 300.0, 88.0, 260.0, 8.0)
+	draw_rect(beat_rect, Color(0.10, 0.13, 0.30, 0.90)); draw_rect(Rect2(beat_rect.position, Vector2(beat_rect.size.x * _beat_phase(), beat_rect.size.y)), Color("#7cf5ff"))
+	draw_line(Vector2(beat_rect.position.x + beat_rect.size.x * _beat_phase(), beat_rect.position.y - 5.0), Vector2(beat_rect.position.x + beat_rect.size.x * _beat_phase(), beat_rect.end.y + 5.0), Color("#fff1a8"), 3.0)
+	draw_string(ThemeDB.fallback_font, Vector2(beat_rect.position.x, beat_rect.position.y + 25.0), "BEAT", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#a9b8ef"))
 	if quiz_streak > 0: draw_string(ThemeDB.fallback_font, Vector2(470, 52), "QUIZ STREAK x%d" % quiz_streak, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#a8ffd0"))
 	if run_time < speed_until and started: draw_string(ThemeDB.fallback_font, Vector2(470, 80), "SPEED BOOST x%.2f  %.1fs" % [speed_boost_multiplier, max(0.0, speed_until - run_time)], HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#a8ffd0"))
 	if audio_resync_time > 0.0: draw_string(ThemeDB.fallback_font, Vector2(0, 145), "RESYNCING BEAT %.1f" % audio_resync_time, HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 19, Color("#a8ffd0"))
 	if message_time > 0.0: draw_string(ThemeDB.fallback_font, Vector2(VIEW.x / 2 - 200, 145), message, HORIZONTAL_ALIGNMENT_CENTER, 400, 22, Color("#ffffff"))
 	if ghost_final_started:
 		var final_rect := Rect2(390, 176, 500, 72); draw_rect(final_rect, Color(0.35, 0.16, 0.48, 0.94)); draw_rect(final_rect, Color("#f5e27e"), false, 4.0); draw_string(ThemeDB.fallback_font, final_rect.position + Vector2(0, 48), "DASH THE GHOST!", HORIZONTAL_ALIGNMENT_CENTER, final_rect.size.x, 34, Color("#ffffff"))
+	if zombie_attack_warning > 0.0:
+		var warning_label := "JUMP OVER THE WAVE" if zombie_attack_pattern == 0 else "STAY LOW / DASH THROUGH"
+		var warning_rect := Rect2(350, 170, 580, 58); draw_rect(warning_rect, Color(0.30, 0.08, 0.16, 0.94)); draw_rect(warning_rect, Color("#ff6d89"), false, 3.0); draw_string(ThemeDB.fallback_font, warning_rect.position + Vector2(0, 25), warning_label, HORIZONTAL_ALIGNMENT_CENTER, warning_rect.size.x, 20, Color("#fff1a8")); draw_rect(Rect2(warning_rect.position + Vector2(18, 38), Vector2((warning_rect.size.x - 36.0) * clampf(zombie_attack_warning / (_music_beat() * (3.0 if zombie_attack_is_final else 2.0)), 0.0, 1.0), 7.0), Color("#ff9dbc"))
+	if ghost_wave_active:
+		var ghost_label := "GHOST WAVE • JUMP" if ghost_attack_pattern == 0 else "GHOST WAVE • STAY LOW"
+		draw_string(ThemeDB.fallback_font, Vector2(0, 180), ghost_label, HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 20, Color("#fff1a8"))
 	if crash_timer > 0.0: draw_string(ThemeDB.fallback_font, Vector2(0, 188), "%s  •  TAP / SPACE TO RETRY NOW" % crash_reason, HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 18, Color("#ffb6c9"))
 	if started and not quiz_active and not build_mode and not finished: draw_string(ThemeDB.fallback_font, Vector2(34, VIEW.y - 30), "SPACE / TAP JUMP     X / TAP DASH     B BUILD", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.8, 0.9, 1.0, 0.7))
 
