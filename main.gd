@@ -1649,7 +1649,7 @@ func _draw_checkpoint_marker() -> void:
 func _draw_object(object: Dictionary) -> void:
 	var kind: String = object["type"]; var rect := _object_rect(object); rect.position.x -= camera_x; var center := rect.get_center(); var slam_floor := FLOOR_Y + (slam_offset if chase_started else 0.0) + float(ghost_wave_offsets.get(object["id"], {}).get("offset", 0.0))
 	if started and intro_time_left <= 0.0 and not quiz_active and (kind == "spike" or kind == "block" or kind == "saw"):
-		var beats_away := (float(_object_x(object)) - player.x) / max(1.0, _beat_width())
+		var beats_away: float = (float(_object_x(object)) - player.x) / maxf(1.0, _beat_width())
 		if beats_away > 0.0 and beats_away <= 1.75:
 			var telegraph_alpha := clampf(1.0 - beats_away / 1.75, 0.22, 0.82)
 			draw_circle(Vector2(center.x, rect.position.y - 18.0), 8.0 + _beat_pulse() * 4.0, Color(1.0, 0.72, 0.42, telegraph_alpha * 0.30))
