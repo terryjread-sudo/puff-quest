@@ -161,6 +161,7 @@ assert.match(data, /static func playability_report/);
 assert.match(data, /_repair_generated_playability/);
 assert.match(game, /return not _is_grounded\(\)/);
 assert.match(game, /JUMP BEFORE THE WAVE/);
+assert.match(game, /PLAYABILITY WARNING/);
 assert.match(playability, /Campaign playability and Level 3 shockwave checks passed/);
 assert.match(playability, /platform-grounded player was incorrectly marked safe/);
 assert.ok(fs.existsSync(new URL('../tests/playability_test.gd', import.meta.url)));

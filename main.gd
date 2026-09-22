@@ -834,7 +834,11 @@ func _export_level() -> void:
 
 func _import_level() -> void:
 	var parsed = JSON.parse_string(DisplayServer.clipboard_get())
-	if parsed is Dictionary: _apply_level(parsed); message = "LEVEL IMPORTED"
+	if parsed is Dictionary:
+		_apply_level(parsed)
+		var report: Dictionary = LevelData.playability_report(level_index, objects)
+		if bool(report["pass"]): message = "LEVEL IMPORTED"
+		else: message = "PLAYABILITY WARNING • %d CONFLICTS" % report["hazard_conflicts"].size()
 	else: message = "IMPORT FAILED: COPY LEVEL JSON FIRST"
 	message_time = 1.8
 
