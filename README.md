@@ -40,8 +40,10 @@ Open this folder in Godot 4.x and run `main.tscn`. The Web export can be configu
 - Each skin also changes the cube's trail, dash flare, landing burst, and shield colour; Prism Pulse adds animated orbiting accents.
 - Level completion now gives a clear reward breakdown: diamonds earned, perfect beats, on-beat accuracy, missed opportunities, quizzes solved, best combo, and dashes.
 - Campaign routes now include hand-authored risk/reward forks, with safer raised paths and collectible-heavy alternatives.
+- Campaign generation runs a deterministic boss-aware playability pass: dense floor-hazard clusters and blocked jump corridors are repaired, and each boss window reports its available runway.
 - Beat timing now has a live HUD meter, player-centered timing rings, and short PERFECT/GOOD/OFF BEAT feedback bursts.
-- Boss attacks now alternate between high and low wave patterns with countdown telegraphs and explicit dodge choices.
+- Ghost and zombie boss encounters now use countdown telegraphs; ghost waves alternate patterns while zombie shockwaves use a clear ground-vs-air dodge rule.
+- Level 3 zombie shockwaves are ground attacks: they hit players grounded on the floor or a raised platform, and airborne players are safe at the crossing frame.
 - Quiz distractors are generated uniquely, preventing duplicate answer buttons and false wrong-answer results.
 - Music playback now reconnects cleanly after browser/audio interruptions and restarts from the beginning when a track ends instead of seeking to a stale end position.
 - Quiz recovery explicitly restores the music playback position and restarts the stream if the browser audio element unexpectedly stops.
