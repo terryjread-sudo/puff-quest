@@ -8,6 +8,7 @@ const MUSIC_TRACKS: Array = ["cyberpunk-menu-music.mp3", "murder-on-the-metrorai
 const FLOOR_HAZARD_CLUSTER_WINDOW_BEATS: float = 1.75
 const MAX_FLOOR_HAZARDS_IN_JUMP_WINDOW: int = 3
 const BOSS_CORRIDOR_AFTER_BEATS: float = 0.50
+const DIFFICULTIES: Array = ["Easy", "Normal", "Hard"]
 
 static func level_catalog() -> Array:
 	return [
@@ -19,8 +20,30 @@ static func level_catalog() -> Array:
 static func default_level() -> Dictionary:
 	return campaign_level(0)
 
-static func campaign_level(index: int) -> Dictionary:
+static func difficulty_settings(difficulty: int) -> Dictionary:
+	var safe_difficulty: int = clampi(difficulty, 0, DIFFICULTIES.size() - 1)
+	var shields: Array = [4, 3, 2]
+	var perfect_windows: Array = [0.15, 0.10, 0.08]
+	var good_windows: Array = [0.30, 0.24, 0.18]
+	return {"name": DIFFICULTIES[safe_difficulty], "shields": shields[safe_difficulty], "perfect_window": perfect_windows[safe_difficulty], "good_window": good_windows[safe_difficulty]}
+
+static func migrate_best_scores(legacy_scores: Variant, tier_scores: Variant) -> Array:
+	var result: Array = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+	if tier_scores is Array and tier_scores.size() >= 9:
+		for i in range(9): result[i] = maxi(0, int(tier_scores[i]))
+	elif legacy_scores is Array:
+		for i in range(mini(LEVEL_COUNT, legacy_scores.size())): result[i * 3 + 1] = maxi(0, int(legacy_scores[i]))
+	return result
+
+static func normalize_difficulty_unlocks(raw: Variant) -> Array:
+	var result: Array = [0, 0, 0]
+	if raw is Array:
+		for i in range(mini(LEVEL_COUNT, raw.size())): result[i] = clampi(int(raw[i]), 0, 2)
+	return result
+
+static func campaign_level(index: int, difficulty: int = 1) -> Dictionary:
 	var safe_index: int = clampi(index, 0, LEVEL_COUNT - 1)
+	var safe_difficulty: int = clampi(difficulty, 0, DIFFICULTIES.size() - 1)
 	var catalog: Array = level_catalog()
 	var meta: Dictionary = catalog[safe_index]
 	var objects: Array = []
@@ -123,8 +146,24 @@ static func campaign_level(index: int) -> Dictionary:
 			["platform", 110.0, 1.15, {"width": 2.8, "height": 0.25}],
 			["star", 110.5, 1.85, {}]
 		])
-	_repair_generated_playability(objects, safe_index, length_beats)
-	return {"version": VERSION, "level_index": safe_index, "display_name": meta["name"], "subtitle": meta["subtitle"], "theme": meta["theme"], "chase_beat": meta["chase_beat"], "music": {"track": meta["track"], "bpm": meta["bpm"], "beat_offset_seconds": 0.0}, "length_beats": length_beats, "objects": objects, "triggers": triggers}
+	_apply_difficulty_layout(objects, safe_difficulty, safe_index, length_beats)
+	_repair_generated_playability(objects, safe_index, length_beats, safe_difficulty)
+	return {"version": VERSION, "level_index": safe_index, "difficulty": safe_difficulty, "display_name": meta["name"], "subtitle": meta["subtitle"], "theme": meta["theme"], "chase_beat": meta["chase_beat"], "music": {"track": meta["track"], "bpm": meta["bpm"], "beat_offset_seconds": 0.0}, "length_beats": length_beats, "objects": objects, "triggers": triggers}
+
+static func _apply_difficulty_layout(objects: Array, difficulty: int, level_index: int, length_beats: float) -> void:
+	if difficulty == 1: return
+	if difficulty == 0:
+		var hazard_number := 0
+		for i in range(objects.size() - 1, -1, -1):
+			if _is_hazard(objects[i]):
+				hazard_number += 1
+				if hazard_number % 5 == 0: objects.remove_at(i)
+		return
+	var number := 9500
+	for beat in range(14, int(length_beats) - 4, 23):
+		var offset := float((beat + level_index * 3) % 5) * 0.25
+		objects.append(_object("spike", float(beat) + offset, 0.0, {}, number))
+		number += 1
 
 static func _add_pattern(objects: Array, number: int, pattern: Array) -> int:
 	for entry in pattern:
@@ -140,25 +179,37 @@ static func _object(kind: String, beat: float, lane: float, properties: Dictiona
 static func _quiz(id: String, beat: float, table: int) -> Dictionary:
 	return {"id": id, "type": "quiz", "beat": beat, "table": table, "time_limit": 10.0}
 
-static func boss_attack_windows(index: int) -> Array:
+static func boss_attack_interval(index: int, difficulty: int = 1) -> float:
+	var safe_difficulty: int = clampi(difficulty, 0, DIFFICULTIES.size() - 1)
+	if index == 0: return [10.0, 8.0, 6.0][safe_difficulty]
+	if index == 1: return [22.0, 18.0, 15.0][safe_difficulty]
+	return [24.0, 20.0, 16.0][safe_difficulty]
+
+static func boss_attack_windows(index: int, difficulty: int = 1) -> Array:
 	var safe_index: int = clampi(index, 0, LEVEL_COUNT - 1)
 	var catalog: Array = level_catalog()
 	var length_beats: float = float(catalog[safe_index]["length_beats"])
 	var windows: Array = []
 	match safe_index:
 		0:
-			var skeleton_beat: float = 100.0
+			var skeleton_beat: float = 92.0 + boss_attack_interval(safe_index, difficulty)
 			while skeleton_beat < length_beats:
 				windows.append({"beat": skeleton_beat, "kind": "skeleton_slam", "runway_beats": 1.50})
-				skeleton_beat += 8.0
+				skeleton_beat += boss_attack_interval(safe_index, difficulty)
 		1:
-			for ghost_beat in [106.0, 124.0, 142.0, 160.0, 166.0]:
+			var ghost_beat: float = length_beats * 0.5 + 8.0
+			var ghost_final_beat: float = length_beats - 30.0
+			while ghost_beat < ghost_final_beat:
 				windows.append({"beat": ghost_beat, "kind": "ghost_wave", "runway_beats": 1.50})
+				ghost_beat += boss_attack_interval(safe_index, difficulty)
+			windows.append({"beat": ghost_final_beat, "kind": "ghost_wave", "runway_beats": 1.50})
 		2:
 			var zombie_beat: float = length_beats * 0.5 + 8.0
-			while zombie_beat < length_beats:
+			var zombie_final_beat: float = length_beats - 17.0
+			while zombie_beat < zombie_final_beat:
 				windows.append({"beat": zombie_beat, "kind": "zombie_shockwave", "runway_beats": 2.50})
-				zombie_beat += 20.0
+				zombie_beat += boss_attack_interval(safe_index, difficulty)
+			windows.append({"beat": zombie_final_beat, "kind": "zombie_shockwave", "runway_beats": 2.50})
 	return windows
 
 static func playability_report(index: int, raw_objects: Variant = null) -> Dictionary:
@@ -168,9 +219,14 @@ static func playability_report(index: int, raw_objects: Variant = null) -> Dicti
 		source_objects = _clean_objects(raw_objects)
 	else:
 		source_objects = campaign_level(safe_index)["objects"]
-	return _build_playability_report(safe_index, source_objects)
+	return _build_playability_report(safe_index, source_objects, 1)
 
-static func _build_playability_report(index: int, source_objects: Array) -> Dictionary:
+static func difficulty_playability_report(index: int, difficulty: int) -> Dictionary:
+	var safe_index: int = clampi(index, 0, LEVEL_COUNT - 1)
+	var safe_difficulty: int = clampi(difficulty, 0, DIFFICULTIES.size() - 1)
+	return _build_playability_report(safe_index, campaign_level(safe_index, safe_difficulty)["objects"], safe_difficulty)
+
+static func _build_playability_report(index: int, source_objects: Array, difficulty: int = 1) -> Dictionary:
 	var sorted_hazards: Array = []
 	for object in source_objects:
 		if _is_hazard(object): sorted_hazards.append(object)
@@ -190,7 +246,7 @@ static func _build_playability_report(index: int, source_objects: Array) -> Dict
 		if cluster_count > MAX_FLOOR_HAZARDS_IN_JUMP_WINDOW:
 			hazard_conflicts.append({"type": "dense_floor_hazards", "hazard_id": last_cluster_hazard["id"], "beat": last_cluster_hazard["beat"], "count": cluster_count})
 	var runways: Array = []
-	for window in boss_attack_windows(index):
+	for window in boss_attack_windows(index, difficulty):
 		var attack_beat: float = float(window["beat"])
 		var runway_start: float = attack_beat - float(window["runway_beats"])
 		var runway_end: float = attack_beat - 0.75
@@ -216,7 +272,7 @@ static func _build_playability_report(index: int, source_objects: Array) -> Dict
 		if not blocking_hazards.is_empty():
 			hazard_conflicts.append({"type": "boss_jump_corridor_blocked", "beat": attack_beat, "hazard_ids": blocking_hazards})
 		runways.append({"beat": attack_beat, "platform_available": platform_available, "floor_launch_clear": floor_launch_clear, "blocking_hazards": blocking_hazards, "pass": runway_passes and blocking_hazards.is_empty()})
-	return {"level_index": index, "boss_attack_beats": boss_attack_windows(index).map(func(window: Dictionary) -> float: return float(window["beat"])), "runways": runways, "hazard_conflicts": hazard_conflicts, "pass": hazard_conflicts.is_empty()}
+	return {"level_index": index, "difficulty": difficulty, "boss_attack_beats": boss_attack_windows(index, difficulty).map(func(window: Dictionary) -> float: return float(window["beat"])), "runways": runways, "hazard_conflicts": hazard_conflicts, "pass": hazard_conflicts.is_empty()}
 
 static func _is_hazard(object: Dictionary) -> bool:
 	return object["type"] == "spike" or object["type"] == "block" or object["type"] == "saw"
@@ -229,10 +285,10 @@ static func _is_blocking_jump_hazard(object: Dictionary) -> bool:
 	if object["type"] == "spike": return float(object["lane"]) > 0.05
 	return true
 
-static func _repair_generated_playability(objects: Array, index: int, length_beats: float) -> void:
+static func _repair_generated_playability(objects: Array, index: int, length_beats: float, difficulty: int = 1) -> void:
 	var repair_count := 0
 	while repair_count < 32:
-		var report: Dictionary = _build_playability_report(index, objects)
+		var report: Dictionary = _build_playability_report(index, objects, difficulty)
 		if bool(report["pass"]): return
 		var repaired := false
 		for conflict in report["hazard_conflicts"]:
@@ -246,7 +302,7 @@ static func _repair_generated_playability(objects: Array, index: int, length_bea
 				hazard_id = str(conflict["hazard_ids"][0])
 			for object in objects:
 				if str(object["id"]) != hazard_id: continue
-				var repaired_beat: float = _find_safe_hazard_beat(objects, object, length_beats, index)
+				var repaired_beat: float = _find_safe_hazard_beat(objects, object, length_beats, index, difficulty)
 				if repaired_beat >= 0.0:
 					object["beat"] = repaired_beat
 					repaired = true
@@ -255,7 +311,7 @@ static func _repair_generated_playability(objects: Array, index: int, length_bea
 		if not repaired: return
 		repair_count += 1
 
-static func _find_safe_hazard_beat(objects: Array, hazard: Dictionary, length_beats: float, index: int) -> float:
+static func _find_safe_hazard_beat(objects: Array, hazard: Dictionary, length_beats: float, index: int, difficulty: int = 1) -> float:
 	var original_beat: float = float(hazard["beat"])
 	for step in range(1, 25):
 		for direction in [1.0, -1.0]:
@@ -275,7 +331,7 @@ static func _find_safe_hazard_beat(objects: Array, hazard: Dictionary, length_be
 			if not candidate_is_safe: continue
 			if _is_blocking_jump_hazard(hazard):
 				var inside_boss_corridor := false
-				for window in boss_attack_windows(index):
+				for window in boss_attack_windows(index, difficulty):
 					var attack_beat: float = float(window["beat"])
 					if candidate >= attack_beat - 1.0 and candidate <= attack_beat + BOSS_CORRIDOR_AFTER_BEATS:
 						inside_boss_corridor = true
@@ -290,6 +346,7 @@ static func validate(raw: Variant) -> Dictionary:
 	var source: Dictionary = raw
 	var safe_index: int = clampi(int(source.get("level_index", 0)), 0, LEVEL_COUNT - 1)
 	var result: Dictionary = campaign_level(safe_index)
+	result["difficulty"] = clampi(int(source.get("difficulty", 1)), 0, DIFFICULTIES.size() - 1)
 	result["version"] = int(source.get("version", VERSION))
 	result["display_name"] = str(source.get("display_name", result["display_name"]))
 	result["subtitle"] = str(source.get("subtitle", result["subtitle"]))

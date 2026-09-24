@@ -14,7 +14,6 @@ const PALETTE := ["block", "spike", "saw", "catapult", "timetable", "bounce_pad"
 const LEVEL_COUNT := 3
 const BEAT_FLASH_STRENGTH := 0.055
 const INTRO_CLEAR_SECONDS := 6.0
-const SLAM_INTERVAL_BEATS := 8.0
 const AUDIO_RESYNC_SECONDS := 0.28
 const SHOP_BUTTON_SIZE := Vector2(190.0, 54.0)
 const SKINS := [
@@ -41,8 +40,11 @@ var paused := false
 var build_mode := false
 var level_index := 0
 var selected_level_index := 0
+var difficulty_index := 0
+var selected_difficulty_index := 0
 var unlocked_level := 0
-var best_scores: Array = [0, 0, 0]
+var difficulty_unlocked: Array = [0, 0, 0]
+var best_scores: Array = [0, 0, 0, 0, 0, 0, 0, 0, 0]
 var diamonds := 0
 var owned_skins: Array[String] = ["classic"]
 var equipped_skin := "classic"
@@ -182,7 +184,7 @@ func _ready() -> void:
 	rng.seed = 20260918
 	campaign_catalog = LevelData.level_catalog()
 	_load_progress()
-	_apply_level(LevelData.campaign_level(0))
+	_apply_level(LevelData.campaign_level(0, 0))
 	_setup_music()
 	skeleton_sprite = load("res://assets/skeleton-run-spritesheet.png") as Texture2D
 	ghost_float_sprite = load("res://assets/ghost-float-spritesheet.png") as Texture2D
@@ -212,6 +214,7 @@ func _ready() -> void:
 func _apply_level(data: Dictionary) -> void:
 	level = LevelData.validate(data)
 	level_index = int(level.get("level_index", 0))
+	difficulty_index = int(level.get("difficulty", 1))
 	objects = level["objects"]
 	triggers = level["triggers"]
 	runtime_objects.clear()
@@ -307,6 +310,9 @@ func _beat_distance() -> float:
 	var clock: float = fmod(max(0.0, run_time + float(level["music"].get("beat_offset_seconds", 0.0))), beat)
 	return min(clock, beat - clock)
 
+func _difficulty_settings() -> Dictionary:
+	return LevelData.difficulty_settings(difficulty_index)
+
 func _beat_pulse() -> float:
 	var beat: float = _music_beat()
 	var clock: float = run_time if started else background_time
@@ -381,7 +387,7 @@ func _run_step(delta: float) -> void:
 		return
 	if slam_next_beat >= 0.0 and player.x >= START_X + slam_next_beat * _beat_width():
 		_trigger_ground_slam()
-		slam_next_beat += SLAM_INTERVAL_BEATS
+		slam_next_beat += LevelData.boss_attack_interval(0, difficulty_index)
 	var grounded := _is_grounded()
 	if grounded: coyote = 0.10
 	else: coyote = max(0.0, coyote - delta)
@@ -472,10 +478,14 @@ func _input(event: InputEvent) -> void:
 			selected_times_table = max(2, selected_times_table - 1); _save_progress(); return
 		if not started and event.keycode == KEY_EQUAL:
 			selected_times_table = min(12, selected_times_table + 1); _save_progress(); return
-		if not started and (event.keycode == KEY_LEFT or event.keycode == KEY_UP):
+		if not started and event.keycode == KEY_LEFT:
 			selected_level_index = max(0, selected_level_index - 1); return
-		if not started and (event.keycode == KEY_RIGHT or event.keycode == KEY_DOWN):
+		if not started and event.keycode == KEY_RIGHT:
 			selected_level_index = min(unlocked_level, selected_level_index + 1); return
+		if not started and event.keycode == KEY_UP:
+			selected_difficulty_index = mini(int(difficulty_unlocked[selected_level_index]), selected_difficulty_index + 1); return
+		if not started and event.keycode == KEY_DOWN:
+			selected_difficulty_index = maxi(0, selected_difficulty_index - 1); return
 		if event.keycode == KEY_ENTER and not started: _start_run(); return
 		if event.keycode == KEY_B and started and not quiz_active: _toggle_builder(); return
 		if build_mode:
@@ -512,8 +522,10 @@ func _input(event: InputEvent) -> void:
 			if _times_table_minus_rect().has_point(event.position): selected_times_table = max(2, selected_times_table - 1); _save_progress(); return
 			if _times_table_plus_rect().has_point(event.position): selected_times_table = min(12, selected_times_table + 1); _save_progress(); return
 			var level_choice: int = _level_choice_at(event.position)
-			if level_choice >= 0: _choose_level(level_choice)
-			else: _start_run()
+			if level_choice >= 0: _choose_level(level_choice); return
+			var tier_choice: int = _difficulty_choice_at(event.position)
+			if tier_choice >= 0: _choose_difficulty(tier_choice); return
+			if _play_button_rect().has_point(event.position): _start_run()
 		elif _touch_jump_rect().has_point(event.position): jump_buffer = 0.12
 		elif _touch_dash_rect().has_point(event.position): _start_dash()
 	if event is InputEventScreenTouch and event.pressed:
@@ -522,16 +534,19 @@ func _input(event: InputEvent) -> void:
 			if _times_table_minus_rect().has_point(event.position): selected_times_table = max(2, selected_times_table - 1); _save_progress(); return
 			if _times_table_plus_rect().has_point(event.position): selected_times_table = min(12, selected_times_table + 1); _save_progress(); return
 			var level_touch_choice: int = _level_choice_at(event.position)
-			if level_touch_choice >= 0: _choose_level(level_touch_choice)
-			else: _start_run()
+			if level_touch_choice >= 0: _choose_level(level_touch_choice); return
+			var tier_touch_choice: int = _difficulty_choice_at(event.position)
+			if tier_touch_choice >= 0: _choose_difficulty(tier_touch_choice); return
+			if _play_button_rect().has_point(event.position): _start_run()
 		elif _touch_jump_rect().has_point(event.position): jump_buffer = 0.12
 		elif _touch_dash_rect().has_point(event.position): _start_dash()
 
 func _start_run() -> void:
 	if not started:
-		if selected_level_index != level_index:
-			_apply_level(LevelData.campaign_level(selected_level_index)); player = Vector2(START_X, FLOOR_Y - PLAYER_SIZE.y); velocity = Vector2.ZERO; camera_x = 0.0; run_time = 0.0; checkpoint_index = 0
-		shield_hits = 3; invulnerability = 0.0; score = 0; combo = 0; quiz_points = 0; quiz_streak = 0; _reset_run_stats(); intro_time_left = INTRO_CLEAR_SECONDS
+		if selected_level_index != level_index or selected_difficulty_index != difficulty_index:
+			_apply_level(LevelData.campaign_level(selected_level_index, selected_difficulty_index)); player = Vector2(START_X, FLOOR_Y - PLAYER_SIZE.y); velocity = Vector2.ZERO; camera_x = 0.0; run_time = 0.0; checkpoint_index = 0
+		level_index = selected_level_index; difficulty_index = selected_difficulty_index
+		shield_hits = int(_difficulty_settings()["shields"]); invulnerability = 0.0; score = 0; combo = 0; quiz_points = 0; quiz_streak = 0; _reset_run_stats(); intro_time_left = INTRO_CLEAR_SECONDS
 	started = true; paused = false; _ensure_music(); message = "%s • FIND THE BEAT" % str(level["display_name"]); message_time = 1.5
 
 func _reset_run_stats() -> void:
@@ -545,6 +560,25 @@ func _level_choice_at(pos: Vector2) -> int:
 		if _level_choice_rect(i).has_point(pos): return i
 	return -1
 
+func _difficulty_choice_rect(index: int) -> Rect2:
+	return Rect2(358.0 + float(index) * 188.0, 520.0, 164.0, 38.0)
+
+func _difficulty_choice_at(pos: Vector2) -> int:
+	for i in range(3):
+		if _difficulty_choice_rect(i).has_point(pos): return i
+	return -1
+
+func _play_button_rect() -> Rect2:
+	return Rect2(490.0, 570.0, 300.0, 50.0)
+
+func _choose_difficulty(index: int) -> void:
+	if index < 0: return
+	if index > int(difficulty_unlocked[selected_level_index]):
+		message = "LOCKED • COMPLETE THIS LEVEL ON THE PREVIOUS DIFFICULTY"; message_time = 1.4
+		return
+	selected_difficulty_index = index
+	_apply_level(LevelData.campaign_level(selected_level_index, selected_difficulty_index))
+
 func _choose_level(index: int) -> void:
 	if index < 0 or index >= LEVEL_COUNT: return
 	if index > unlocked_level:
@@ -552,28 +586,27 @@ func _choose_level(index: int) -> void:
 		message_time = 1.4
 		return
 	selected_level_index = index
-	_apply_level(LevelData.campaign_level(index))
+	selected_difficulty_index = mini(selected_difficulty_index, int(difficulty_unlocked[index]))
+	_apply_level(LevelData.campaign_level(index, selected_difficulty_index))
 	started = false; finished = false; paused = false; score = 0; combo = 0; quiz_points = 0; quiz_streak = 0; camera_x = 0.0; run_time = 0.0
-	_start_run()
 
 func _return_to_menu() -> void:
 	started = false; finished = false; paused = false; build_mode = false; quiz_active = false; quiz_feedback_time = 0.0; crash_timer = 0.0; camera_x = 0.0; run_time = 0.0; shop_open = false
 	music_expected_playing = false
 	if music_player != null: music_player.stop()
-	_apply_level(LevelData.campaign_level(selected_level_index))
+	_apply_level(LevelData.campaign_level(selected_level_index, selected_difficulty_index))
 	message = "SELECT A LEVEL"; message_time = 1.0
 
 func _load_progress() -> void:
-	unlocked_level = 0; best_scores = [0, 0, 0]; diamonds = 0; owned_skins = ["classic"]; equipped_skin = "classic"
+	unlocked_level = 0; difficulty_unlocked = [0, 0, 0]; best_scores = [0, 0, 0, 0, 0, 0, 0, 0, 0]; diamonds = 0; owned_skins = ["classic"]; equipped_skin = "classic"
 	if not OS.has_feature("web"): return
 	var raw: Variant = JavaScriptBridge.eval("localStorage.getItem('neon_twice_progress') || ''")
 	if not raw is String or str(raw).is_empty(): return
 	var parsed: Variant = JSON.parse_string(str(raw))
 	if not parsed is Dictionary: return
 	unlocked_level = clampi(int(parsed.get("unlocked_level", 0)), 0, LEVEL_COUNT - 1)
-	var saved_scores: Variant = parsed.get("best_scores", [])
-	if saved_scores is Array:
-		for i in range(mini(LEVEL_COUNT, saved_scores.size())): best_scores[i] = int(saved_scores[i])
+	difficulty_unlocked = LevelData.normalize_difficulty_unlocks(parsed.get("difficulty_unlocked", []))
+	best_scores = LevelData.migrate_best_scores(parsed.get("best_scores", []), parsed.get("best_scores_by_difficulty", []))
 	diamonds = maxi(0, int(parsed.get("diamonds", 0)))
 	var saved_skins: Variant = parsed.get("owned_skins", ["classic"])
 	if saved_skins is Array:
@@ -587,7 +620,7 @@ func _load_progress() -> void:
 
 func _save_progress() -> void:
 	if not OS.has_feature("web"): return
-	var payload: String = JSON.stringify({"unlocked_level": unlocked_level, "best_scores": best_scores, "diamonds": diamonds, "owned_skins": owned_skins, "equipped_skin": equipped_skin, "times_table": selected_times_table})
+	var payload: String = JSON.stringify({"unlocked_level": unlocked_level, "difficulty_unlocked": difficulty_unlocked, "best_scores_by_difficulty": best_scores, "diamonds": diamonds, "owned_skins": owned_skins, "equipped_skin": equipped_skin, "times_table": selected_times_table})
 	JavaScriptBridge.eval("localStorage.setItem('neon_twice_progress', %s)" % JSON.stringify(payload))
 
 func _skin_by_id(skin_id: String) -> Dictionary:
@@ -648,7 +681,7 @@ func _shop_click(pos: Vector2) -> void:
 		return
 
 func _restart_run() -> void:
-	_apply_level(level); player = Vector2(START_X, FLOOR_Y - PLAYER_SIZE.y); velocity = Vector2.ZERO; camera_x = 0.0; run_time = 0.0; checkpoint_index = 0; combo = 0; score = 0; quiz_points = 0; quiz_streak = 0; shield_hits = 3; invulnerability = 0.0; crash_timer = 0.0; checkpoint_flash = 0.0; finished = false; quiz_active = false; quiz_feedback_time = 0.0; quiz_snapshot.clear(); build_mode = false; paused = false; speed_until = 0.0; catapult_boost_left = 0.0; runtime_objects.clear(); _reset_run_stats(); intro_time_left = INTRO_CLEAR_SECONDS; slam_next_beat = -1.0; slam_offset = 0.0; slam_velocity = 0.0; slam_timer = 0.0; _resume_music(); _start_run()
+	_apply_level(level); player = Vector2(START_X, FLOOR_Y - PLAYER_SIZE.y); velocity = Vector2.ZERO; camera_x = 0.0; run_time = 0.0; checkpoint_index = 0; combo = 0; score = 0; quiz_points = 0; quiz_streak = 0; shield_hits = int(_difficulty_settings()["shields"]); invulnerability = 0.0; crash_timer = 0.0; checkpoint_flash = 0.0; finished = false; quiz_active = false; quiz_feedback_time = 0.0; quiz_snapshot.clear(); build_mode = false; paused = false; speed_until = 0.0; catapult_boost_left = 0.0; runtime_objects.clear(); _reset_run_stats(); intro_time_left = INTRO_CLEAR_SECONDS; slam_next_beat = -1.0; slam_offset = 0.0; slam_velocity = 0.0; slam_timer = 0.0; _resume_music(); _start_run()
 
 func _toggle_builder() -> void:
 	build_mode = not build_mode; paused = build_mode
@@ -668,7 +701,7 @@ func _builder_key(key: Key) -> void:
 	if key == KEY_T: _test_from_builder_position(); return
 	if key == KEY_E: _export_level(); return
 	if key == KEY_I: _import_level(); return
-	if key == KEY_R: _apply_level(LevelData.campaign_level(level_index)); message = "DEFAULT LEVEL RESTORED"; message_time = 1.2; return
+	if key == KEY_R: _apply_level(LevelData.campaign_level(level_index, difficulty_index)); message = "DEFAULT LEVEL RESTORED"; message_time = 1.2; return
 	if key >= KEY_1 and key <= KEY_9: selected_palette = clamp(key - KEY_1, 0, PALETTE.size() - 1)
 	if key == KEY_0: selected_palette = 9
 
@@ -866,7 +899,7 @@ func _start_chase() -> void:
 		return
 	chase_started = true; chase_flash = 1.2; message = "THE CARNIVAL IS CHASING YOU"; message_time = 1.5
 	var chase_beat: float = float(level.get("chase_beat", 92.0))
-	slam_next_beat = chase_beat + SLAM_INTERVAL_BEATS
+	slam_next_beat = chase_beat + LevelData.boss_attack_interval(0, difficulty_index)
 
 func _start_ghost_chase() -> void:
 	chase_started = true; chase_flash = 1.2; ghost_attack_next_beat = -1.0; ghost_attack_phase_started = false; ghost_attack_timer = 0.0; ghost_attack_elapsed = 0.0; ghost_attack_resolved = false; ghost_attack_pattern = 0; ghost_attack_count = 0; ghost_wave_hit = false; ghost_wave_active = false; ghost_wave_x = -1.0; ghost_wave_previous_x = -1.0; ghost_wave_offsets.clear(); ghost_final_started = false; ghost_final_timer = 0.0; ghost_final_resolved = false; ghost_death_timer = 0.0
@@ -913,8 +946,11 @@ func _update_zombie_encounter(delta: float) -> void:
 	if not slime_attack_phase_started and player.x >= START_X + attack_start_beat * _beat_width():
 		slime_attack_phase_started = true; slime_attack_next_beat = attack_start_beat + 8.0; slime_attack_visible = true; message = "THE ZOMBIE TURNS BACK! USE THE PLATFORMS"; message_time = 1.7
 	if slime_attack_phase_started and slime_attack_next_beat >= 0.0 and player.x >= START_X + slime_attack_next_beat * _beat_width():
-		zombie_attack_is_final = slime_attack_next_beat >= float(level.get("length_beats", 210.0)) - 24.0
-		zombie_attack_warning = _music_beat() * (3.0 if zombie_attack_is_final else 2.0); zombie_attack_dodge_awarded = false; slime_attack_visible = true; slime_attack_next_beat += 20.0
+		var final_attack_beat: float = float(level.get("length_beats", 210.0)) - 17.0
+		zombie_attack_is_final = slime_attack_next_beat >= final_attack_beat
+		zombie_attack_warning = _music_beat() * (3.0 if zombie_attack_is_final else (2.5 if difficulty_index == 0 else (1.6 if difficulty_index == 2 else 2.0))); zombie_attack_dodge_awarded = false; slime_attack_visible = true
+		if zombie_attack_is_final: slime_attack_next_beat = -1.0
+		else: slime_attack_next_beat = minf(slime_attack_next_beat + LevelData.boss_attack_interval(2, difficulty_index), final_attack_beat)
 		message = "FINAL ZOMBIE WIND-UP!" if zombie_attack_is_final else "ZOMBIE WIND-UP • JUMP BEFORE THE WAVE"; message_time = 1.0
 
 func _reset_zombie_attack_state() -> void:
@@ -980,7 +1016,7 @@ func _update_ghost_encounter(delta: float) -> void:
 func _begin_ghost_attack() -> void:
 	ghost_attack_pattern = ghost_attack_count % 2
 	ghost_attack_count += 1
-	ghost_attack_timer = 1.02; ghost_attack_elapsed = 0.0; ghost_attack_resolved = false; ghost_wave_hit = false; ghost_wave_active = true; ghost_wave_x = VIEW.x + 120.0; ghost_wave_previous_x = ghost_wave_x; ghost_attack_next_beat += 18.0
+	ghost_attack_timer = 1.02; ghost_attack_elapsed = 0.0; ghost_attack_resolved = false; ghost_wave_hit = false; ghost_wave_active = true; ghost_wave_x = VIEW.x + 120.0; ghost_wave_previous_x = ghost_wave_x; ghost_attack_next_beat += LevelData.boss_attack_interval(1, difficulty_index)
 	if ghost_woosh_player != null and ghost_woosh_player.stream != null: ghost_woosh_player.play()
 	message = "GHOST WAVE • JUMP" if ghost_attack_pattern == 0 else "GHOST WAVE • STAY LOW"
 	message_time = 1.0
@@ -1090,7 +1126,7 @@ func _take_hit(reason: String) -> void:
 	if invulnerability > 0.0: return
 	run_hits += 1
 	if shield_hits > 0:
-		shield_hits -= 1; invulnerability = 0.8; velocity.y = -260.0; flash = 0.22; message = "%s • SHIELD %d/3" % [reason, shield_hits]; message_time = 1.2
+		shield_hits -= 1; invulnerability = 0.8; velocity.y = -260.0; flash = 0.22; message = "%s • SHIELD %d/%d" % [reason, shield_hits, int(_difficulty_settings()["shields"])]; message_time = 1.2
 	else: _crash(reason)
 
 func _crash(reason: String) -> void:
@@ -1108,7 +1144,9 @@ func _respawn_at_checkpoint() -> void:
 
 func _finish() -> void:
 	finished = true
-	best_scores[level_index] = max(int(best_scores[level_index]), score)
+	var score_slot: int = level_index * 3 + difficulty_index
+	best_scores[score_slot] = max(int(best_scores[score_slot]), score)
+	difficulty_unlocked[level_index] = maxi(int(difficulty_unlocked[level_index]), mini(2, difficulty_index + 1))
 	if level_index == unlocked_level and unlocked_level < LEVEL_COUNT - 1: unlocked_level += 1
 	_save_progress()
 	message = "LEVEL COMPLETE"; message_time = 99.0
@@ -1130,7 +1168,8 @@ func _jump_beat_event() -> void:
 	run_jump_attempts += 1
 	var beat: float = _music_beat()
 	var error: float = _beat_distance()
-	if error <= beat * 0.10:
+	var timing: Dictionary = _difficulty_settings()
+	if error <= beat * float(timing["perfect_window"]):
 		beat_feedback_label = "PERFECT"
 		beat_feedback_color = Color("#7cf5ff")
 		beat_feedback_time = 0.85
@@ -1138,7 +1177,7 @@ func _jump_beat_event() -> void:
 		_combo_event("PERFECT JUMP")
 		score += 150
 		message = "PERFECT JUMP +150"
-	elif error <= beat * 0.24:
+	elif error <= beat * float(timing["good_window"]):
 		beat_feedback_label = "GOOD"
 		beat_feedback_color = Color("#a8ffd0")
 		beat_feedback_time = 0.70
@@ -1692,7 +1731,7 @@ func _draw_object(object: Dictionary) -> void:
 			draw_line(Vector2(center.x, rect.end.y), Vector2(center.x, rect.position.y), Color("#55d68a"), 5.0); draw_colored_polygon(PackedVector2Array([Vector2(center.x + 2, rect.position.y + 4), Vector2(center.x + 30, rect.position.y + 14), Vector2(center.x + 2, rect.position.y + 25)]), Color("#a8ffd0"))
 
 func _draw_hud() -> void:
-	draw_rect(Rect2(24, 20, 690, 80), Color(0.04, 0.06, 0.16, 0.84)); draw_string(ThemeDB.fallback_font, Vector2(44, 52), "%02d  %s" % [level_index + 1, str(level["display_name"])], HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, Vector2(44, 80), "SCORE %06d    COMBO x%d    SHIELD %d/3    ♦ %03d" % [score, combo, shield_hits, diamonds], HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#f5e27e"))
+	draw_rect(Rect2(24, 20, 790, 80), Color(0.04, 0.06, 0.16, 0.84)); draw_string(ThemeDB.fallback_font, Vector2(44, 52), "%02d  %s  •  %s" % [level_index + 1, str(level["display_name"]), str(LevelData.DIFFICULTIES[difficulty_index]).to_upper()], HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, Vector2(44, 80), "SCORE %06d    COMBO x%d    SHIELD %d/%d    ♦ %03d" % [score, combo, shield_hits, int(_difficulty_settings()["shields"]), diamonds], HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#f5e27e"))
 	draw_string(ThemeDB.fallback_font, Vector2(VIEW.x - 300, 46), "%d BPM  •  %s" % [int(level["music"]["bpm"]), "BUILDER" if build_mode else ("SLOWED" if quiz_active else ("CHASE" if _chase_active() else "ON BEAT"))], HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color("#cbbaff")); draw_string(ThemeDB.fallback_font, Vector2(VIEW.x - 300, 76), "DISTANCE %04d m" % int(player.x / 10.0), HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#8fa8df"))
 	var beat_rect := Rect2(VIEW.x - 300.0, 88.0, 260.0, 8.0)
 	draw_rect(beat_rect, Color(0.10, 0.13, 0.30, 0.90)); draw_rect(Rect2(beat_rect.position, Vector2(beat_rect.size.x * _beat_phase(), beat_rect.size.y)), Color("#7cf5ff"))
@@ -1737,10 +1776,20 @@ func _draw_title() -> void:
 		draw_string(ThemeDB.fallback_font, card.position + Vector2(22, 120), str(meta["subtitle"]), HORIZONTAL_ALIGNMENT_LEFT, card.size.x - 44, 16, Color("#cbbaff") if not locked else Color("#626987"))
 		draw_string(ThemeDB.fallback_font, card.position + Vector2(22, 182), "%d BPM" % int(meta["bpm"]), HORIZONTAL_ALIGNMENT_LEFT, -1, 19, Color("#7cf5ff") if not locked else Color("#626987"))
 		draw_string(ThemeDB.fallback_font, card.position + Vector2(22, 218), str(meta["track"]).get_file(), HORIZONTAL_ALIGNMENT_LEFT, card.size.x - 44, 14, Color("#a9b8ef") if not locked else Color("#626987"))
-		var best: int = int(best_scores[i])
-		draw_string(ThemeDB.fallback_font, card.position + Vector2(22, 270), "BEST %06d" % best, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#f5e27e") if not locked else Color("#626987"))
-		draw_string(ThemeDB.fallback_font, card.position + Vector2(22, 320), "LOCKED" if locked else ("SELECTED • PRESS SPACE" if selected else "UNLOCKED"), HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#ff9dbc") if locked else Color("#a8ffd0"))
-	draw_string(ThemeDB.fallback_font, Vector2(0, 555), "CLICK / TAP A LEVEL TO PLAY  •  ARROWS SELECT  •  SPACE STARTS", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 18, Color("#ffffff")); draw_string(ThemeDB.fallback_font, Vector2(0, 598), "JUMP ON THE BEAT FOR PERFECT BONUS SCORE", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 16, Color("#a9b8ef"))
+		var best: int = int(best_scores[i * 3 + selected_difficulty_index])
+		draw_string(ThemeDB.fallback_font, card.position + Vector2(22, 270), "%s BEST %06d" % [str(LevelData.DIFFICULTIES[selected_difficulty_index]).to_upper(), best], HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#f5e27e") if not locked else Color("#626987"))
+		draw_string(ThemeDB.fallback_font, card.position + Vector2(22, 320), "LOCKED" if locked else ("SELECTED" if selected else "UNLOCKED"), HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#ff9dbc") if locked else Color("#a8ffd0"))
+	for tier in range(3):
+		var tier_rect: Rect2 = _difficulty_choice_rect(tier)
+		var tier_locked: bool = tier > int(difficulty_unlocked[selected_level_index])
+		var tier_selected: bool = tier == selected_difficulty_index
+		draw_rect(tier_rect, Color("#11183e") if tier_locked else (Color("#26336e") if tier_selected else Color("#182450")))
+		draw_rect(tier_rect, Color("#70789f") if tier_locked else (Color("#a8ffd0") if tier_selected else Color("#7cf5ff")), false, 2.0)
+		draw_string(ThemeDB.fallback_font, tier_rect.position + Vector2(0, 26), ("LOCKED • " if tier_locked else "") + str(LevelData.DIFFICULTIES[tier]).to_upper(), HORIZONTAL_ALIGNMENT_CENTER, tier_rect.size.x, 15, Color("#7f86a9") if tier_locked else Color("#ffffff"))
+	var play_rect: Rect2 = _play_button_rect()
+	draw_rect(play_rect, Color("#55d68a")); draw_rect(play_rect, Color("#a8ffd0"), false, 3.0)
+	draw_string(ThemeDB.fallback_font, play_rect.position + Vector2(0, 33), "PLAY %s" % str(LevelData.DIFFICULTIES[selected_difficulty_index]).to_upper(), HORIZONTAL_ALIGNMENT_CENTER, play_rect.size.x, 21, Color("#102d36"))
+	draw_string(ThemeDB.fallback_font, Vector2(0, 642), "TAP A LEVEL, CHOOSE A DIFFICULTY, THEN PLAY  •  ARROWS SELECT LEVEL  •  UP/DOWN DIFFICULTY", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 15, Color("#ffffff"))
 
 func _draw_shop() -> void:
 	draw_string(ThemeDB.fallback_font, Vector2(55, 132), "CHOOSE YOUR CUBE • PRESS S OR ESC TO RETURN", HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color("#cbbaff"))
