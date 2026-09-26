@@ -46,6 +46,14 @@ func _run_tests() -> void:
 	var game: Node = game_scene.instantiate()
 	root.add_child(game)
 	await process_frame
+	game.quiz_number = 12
+	var twelve_parts: Dictionary = game._quiz_place_value_parts()
+	if twelve_parts["tens"] != 1 or twelve_parts["ones"] != 2:
+		_fail("Place-value hint did not split 12 into one ten and two ones")
+	game.quiz_number = 7
+	var seven_parts: Dictionary = game._quiz_place_value_parts()
+	if seven_parts["tens"] != 0 or seven_parts["ones"] != 7:
+		_fail("Place-value hint did not split a one-digit number correctly")
 	game._apply_level(LevelData.campaign_level(2))
 	game.difficulty_unlocked = [0, 0, 0]
 	game.level_index = 0

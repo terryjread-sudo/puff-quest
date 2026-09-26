@@ -1229,6 +1229,9 @@ func _quiz_choice_at(pos: Vector2) -> int:
 func _quiz_choice_rect(index: int) -> Rect2:
 	return Rect2(140.0 + index * 350.0, 310.0, 300.0, 150.0)
 
+func _quiz_place_value_parts() -> Dictionary:
+	return {"tens": int(quiz_number / 10), "ones": quiz_number % 10}
+
 func _update_particles(delta: float) -> void:
 	for i in range(particles.size() - 1, -1, -1):
 		particles[i]["p"] += particles[i]["v"] * delta; particles[i]["v"] *= 0.94; particles[i]["life"] -= delta
@@ -1815,7 +1818,20 @@ func _draw_quiz() -> void:
 	if feedback:
 		draw_string(ThemeDB.fallback_font, Vector2(0, 250), quiz_feedback_text, HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 21, Color("#f5e27e")); draw_string(ThemeDB.fallback_font, Vector2(0, 420), "CHECKPOINT RESTART IN %.1f" % max(0.0, quiz_feedback_time), HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 25, Color("#ff9ab4")); draw_string(ThemeDB.fallback_font, Vector2(0, 485), "Read the correction, then try the beat again", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 18, Color("#a9b8ef"))
 	else:
-		draw_string(ThemeDB.fallback_font, Vector2(0, 246), "Only the answer buttons are active", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 17, Color("#a9b8ef"))
+		if difficulty_index <= 1:
+			var parts: Dictionary = _quiz_place_value_parts()
+			var tens_cell := Rect2(430.0, 207.0, 190.0, 62.0)
+			var ones_cell := Rect2(660.0, 207.0, 190.0, 62.0)
+			draw_rect(tens_cell, Color("#182450")); draw_rect(tens_cell, Color("#7cf5ff"), false, 2.0)
+			draw_rect(ones_cell, Color("#182450")); draw_rect(ones_cell, Color("#f5e27e"), false, 2.0)
+			draw_string(ThemeDB.fallback_font, tens_cell.position + Vector2(0, 20), "TENS", HORIZONTAL_ALIGNMENT_CENTER, tens_cell.size.x, 13, Color("#7cf5ff"))
+			draw_string(ThemeDB.fallback_font, tens_cell.position + Vector2(0, 47), "%d  (%d groups of 10)" % [int(parts["tens"]), int(parts["tens"])], HORIZONTAL_ALIGNMENT_CENTER, tens_cell.size.x, 19, Color("#ffffff"))
+			draw_string(ThemeDB.fallback_font, ones_cell.position + Vector2(0, 20), "ONES", HORIZONTAL_ALIGNMENT_CENTER, ones_cell.size.x, 13, Color("#f5e27e"))
+			draw_string(ThemeDB.fallback_font, ones_cell.position + Vector2(0, 47), "%d ones" % int(parts["ones"]), HORIZONTAL_ALIGNMENT_CENTER, ones_cell.size.x, 19, Color("#ffffff"))
+			var tens_product: int = int(parts["tens"]) * 10
+			draw_string(ThemeDB.fallback_font, Vector2(0, 291), "%d × %d = (%d × %d) + (%d × %d)" % [quiz_table, quiz_number, quiz_table, tens_product, quiz_table, int(parts["ones"])], HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 17, Color("#a8ffd0"))
+		else:
+			draw_string(ThemeDB.fallback_font, Vector2(0, 246), "Only the answer buttons are active", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 17, Color("#a9b8ef"))
 		for i in range(3):
 			var rect: Rect2 = _quiz_choice_rect(i); draw_rect(rect, Color("#26336e")); draw_rect(rect, Color("#b06cff"), false, 5.0); draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, 108), "%d" % quiz_choices[i], HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 58, Color("#f5e27e"))
 		draw_string(ThemeDB.fallback_font, Vector2(0, 620), "TIME LEFT %.1f" % max(0.0, quiz_time), HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 22, Color("#ff9ab4"))
