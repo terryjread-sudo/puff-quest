@@ -30,6 +30,8 @@ func _run_tests() -> void:
 		_fail("Difficulty shield counts are incorrect")
 	if easy_settings["good_window"] <= normal_settings["good_window"] or hard_settings["good_window"] >= normal_settings["good_window"]:
 		_fail("Difficulty timing windows do not scale as intended")
+	if easy_settings["quiz_time"] != 15.0 or normal_settings["quiz_time"] != 12.0 or hard_settings["quiz_time"] != 10.0:
+		_fail("Quiz time limits do not scale with difficulty")
 	if LevelData.boss_attack_interval(2, 0) <= LevelData.boss_attack_interval(2, 1) or LevelData.boss_attack_interval(2, 2) >= LevelData.boss_attack_interval(2, 1):
 		_fail("Boss attack intervals do not scale with difficulty")
 	var easy_unlocks: Array = LevelData.normalize_difficulty_unlocks([1, 2, 99])
@@ -46,6 +48,15 @@ func _run_tests() -> void:
 	var game: Node = game_scene.instantiate()
 	root.add_child(game)
 	await process_frame
+	var game_canvas: Node2D = game as Node2D
+	var shop_button: Rect2 = game._shop_button_rect()
+	var shop_button_viewport_point: Vector2 = game_canvas.get_canvas_transform() * (shop_button.position + shop_button.size * 0.5)
+	if not game._shop_button_hit(shop_button_viewport_point):
+		_fail("Shop button did not hit-test at its drawn position")
+	var reveal_button: Rect2 = game._quiz_reveal_rect()
+	var reveal_viewport_point: Vector2 = game_canvas.get_canvas_transform() * (reveal_button.position + reveal_button.size * 0.5)
+	if not game._quiz_reveal_hit(reveal_viewport_point):
+		_fail("Quiz multiplier button did not hit-test at its drawn position")
 	game.quiz_number = 12
 	var twelve_parts: Dictionary = game._quiz_place_value_parts()
 	if twelve_parts["tens"] != 1 or twelve_parts["ones"] != 2:
@@ -54,6 +65,14 @@ func _run_tests() -> void:
 	var seven_parts: Dictionary = game._quiz_place_value_parts()
 	if seven_parts["tens"] != 0 or seven_parts["ones"] != 7:
 		_fail("Place-value hint did not split a one-digit number correctly")
+	game.quiz_table = 2
+	game.quiz_number = 3
+	game.quiz_dots_revealed = false
+	if game._quiz_dot_count() != 2:
+		_fail("Before reveal, the helper should show the times-table number of dots")
+	game.quiz_dots_revealed = true
+	if game._quiz_dot_count() != 6:
+		_fail("Revealing 2 × 3 should show six dots")
 	game._apply_level(LevelData.campaign_level(2))
 	game.difficulty_unlocked = [0, 0, 0]
 	game.level_index = 0

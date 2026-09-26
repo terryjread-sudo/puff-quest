@@ -59,6 +59,7 @@ var quiz_active := false
 var quiz_time := 0.0
 var quiz_number := 0
 var quiz_table := 2
+var quiz_dots_revealed := false
 var selected_times_table := 2
 var quiz_choices: Array[int] = []
 var quiz_correct_index := 0
@@ -438,14 +439,19 @@ func _input(event: InputEvent) -> void:
 	if quiz_feedback_time > 0.0: return
 	if quiz_active:
 		if quiz_input_lock > 0.0: return
-		if event is InputEventKey and event.pressed and not event.echo and event.keycode >= KEY_1 and event.keycode <= KEY_3:
-			_answer_quiz(event.keycode - KEY_1)
+		if event is InputEventKey and event.pressed and not event.echo:
+			if event.keycode >= KEY_1 and event.keycode <= KEY_3: _answer_quiz(event.keycode - KEY_1)
+			elif difficulty_index <= 1 and (event.keycode == KEY_H or event.keycode == KEY_SPACE): quiz_dots_revealed = true
 		elif event is InputEventMouseButton and event.pressed:
-			var choice: int = _quiz_choice_at(event.position)
-			if choice >= 0: _answer_quiz(choice)
+			if difficulty_index <= 1 and _quiz_reveal_hit(event.position): quiz_dots_revealed = true
+			else:
+				var choice: int = _quiz_choice_at(event.position)
+				if choice >= 0: _answer_quiz(choice)
 		elif event is InputEventScreenTouch and event.pressed:
-			var touch_choice: int = _quiz_choice_at(event.position)
-			if touch_choice >= 0: _answer_quiz(touch_choice)
+			if difficulty_index <= 1 and _quiz_reveal_hit(event.position): quiz_dots_revealed = true
+			else:
+				var touch_choice: int = _quiz_choice_at(event.position)
+				if touch_choice >= 0: _answer_quiz(touch_choice)
 		return
 	if finished:
 		if event is InputEventMouseButton and event.pressed and _finish_menu_hit(event.position):
@@ -519,25 +525,27 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed:
 		if not started:
 			if _shop_button_hit(event.position): shop_open = true; return
-			if _times_table_minus_rect().has_point(event.position): selected_times_table = max(2, selected_times_table - 1); _save_progress(); return
-			if _times_table_plus_rect().has_point(event.position): selected_times_table = min(12, selected_times_table + 1); _save_progress(); return
-			var level_choice: int = _level_choice_at(event.position)
+			var menu_position: Vector2 = _canvas_pointer_position(event.position)
+			if _times_table_minus_rect().has_point(menu_position): selected_times_table = max(2, selected_times_table - 1); _save_progress(); return
+			if _times_table_plus_rect().has_point(menu_position): selected_times_table = min(12, selected_times_table + 1); _save_progress(); return
+			var level_choice: int = _level_choice_at(menu_position)
 			if level_choice >= 0: _choose_level(level_choice); return
-			var tier_choice: int = _difficulty_choice_at(event.position)
+			var tier_choice: int = _difficulty_choice_at(menu_position)
 			if tier_choice >= 0: _choose_difficulty(tier_choice); return
-			if _play_button_rect().has_point(event.position): _start_run()
+			if _play_button_rect().has_point(menu_position): _start_run()
 		elif _touch_jump_rect().has_point(event.position): jump_buffer = 0.12
 		elif _touch_dash_rect().has_point(event.position): _start_dash()
 	if event is InputEventScreenTouch and event.pressed:
 		if not started:
 			if _shop_button_hit(event.position): shop_open = true; return
-			if _times_table_minus_rect().has_point(event.position): selected_times_table = max(2, selected_times_table - 1); _save_progress(); return
-			if _times_table_plus_rect().has_point(event.position): selected_times_table = min(12, selected_times_table + 1); _save_progress(); return
-			var level_touch_choice: int = _level_choice_at(event.position)
+			var menu_position: Vector2 = _canvas_pointer_position(event.position)
+			if _times_table_minus_rect().has_point(menu_position): selected_times_table = max(2, selected_times_table - 1); _save_progress(); return
+			if _times_table_plus_rect().has_point(menu_position): selected_times_table = min(12, selected_times_table + 1); _save_progress(); return
+			var level_touch_choice: int = _level_choice_at(menu_position)
 			if level_touch_choice >= 0: _choose_level(level_touch_choice); return
-			var tier_touch_choice: int = _difficulty_choice_at(event.position)
+			var tier_touch_choice: int = _difficulty_choice_at(menu_position)
 			if tier_touch_choice >= 0: _choose_difficulty(tier_touch_choice); return
-			if _play_button_rect().has_point(event.position): _start_run()
+			if _play_button_rect().has_point(menu_position): _start_run()
 		elif _touch_jump_rect().has_point(event.position): jump_buffer = 0.12
 		elif _touch_dash_rect().has_point(event.position): _start_dash()
 
@@ -635,14 +643,14 @@ func _current_skin() -> Dictionary:
 func _shop_card_rect(index: int) -> Rect2:
 	return Rect2(55.0 + (index % 3) * 400.0, 150.0 + int(index / 3) * 230.0, 370.0, 200.0)
 
+func _canvas_pointer_position(viewport_position: Vector2) -> Vector2:
+	return get_canvas_transform().affine_inverse() * viewport_position
+
 func _shop_button_rect() -> Rect2:
-	var screen_size := get_viewport_rect().size
-	return Rect2(max(20.0, screen_size.x - SHOP_BUTTON_SIZE.x - 55.0), 28.0, SHOP_BUTTON_SIZE.x, SHOP_BUTTON_SIZE.y)
+	return Rect2(VIEW.x - SHOP_BUTTON_SIZE.x - 55.0, 28.0, SHOP_BUTTON_SIZE.x, SHOP_BUTTON_SIZE.y)
 
 func _shop_button_hit(pos: Vector2) -> bool:
-	var screen_rect := _shop_button_rect()
-	var logical_rect := Rect2(VIEW.x - SHOP_BUTTON_SIZE.x - 55.0, 28.0, SHOP_BUTTON_SIZE.x, SHOP_BUTTON_SIZE.y)
-	return screen_rect.grow(16.0).has_point(pos) or logical_rect.grow(16.0).has_point(pos)
+	return _shop_button_rect().grow(20.0).has_point(_canvas_pointer_position(pos))
 
 func _times_table_minus_rect() -> Rect2:
 	return Rect2(420.0, 108.0, 56.0, 48.0)
@@ -668,8 +676,9 @@ func _touch_dash_rect() -> Rect2:
 	return Rect2(screen_size.x * 0.55, screen_size.y * 0.62, screen_size.x * 0.45, screen_size.y * 0.38)
 
 func _shop_click(pos: Vector2) -> void:
+	var canvas_position: Vector2 = _canvas_pointer_position(pos)
 	for i in range(SKINS.size()):
-		if not _shop_card_rect(i).has_point(pos): continue
+		if not _shop_card_rect(i).has_point(canvas_position): continue
 		var skin: Dictionary = SKINS[i]
 		var skin_id := str(skin["id"])
 		if owned_skins.has(skin_id):
@@ -1070,7 +1079,7 @@ func _check_triggers() -> void:
 
 func _start_quiz(trigger: Dictionary) -> void:
 	quiz_snapshot = {"player": player, "velocity": velocity, "camera_x": camera_x, "run_time": run_time, "gravity_sign": gravity_sign, "gravity_until": gravity_until, "speed_until": speed_until, "catapult_boost_left": catapult_boost_left, "music_position": music_player.get_playback_position() if music_player != null else 0.0}
-	quiz_active = true; quiz_input_lock = 0.18; quiz_feedback_time = 0.0; quiz_time = 10.0; quiz_table = selected_times_table; quiz_number = rng.randi_range(1, 12)
+	quiz_active = true; quiz_input_lock = 0.18; quiz_feedback_time = 0.0; quiz_dots_revealed = false; quiz_time = float(_difficulty_settings()["quiz_time"]); quiz_table = selected_times_table; quiz_number = rng.randi_range(1, 12)
 	var correct: int = quiz_number * quiz_table
 	quiz_choices = _build_quiz_choices(correct)
 	quiz_correct_index = quiz_choices.find(correct); message = "TIME SHIFT"; message_time = 1.0
@@ -1222,15 +1231,48 @@ func _object_rect(object: Dictionary) -> Rect2:
 	return Rect2(x - 20, y - 20 + slam_y, 40, 40)
 
 func _quiz_choice_at(pos: Vector2) -> int:
+	var canvas_position: Vector2 = _canvas_pointer_position(pos)
 	for i in range(3):
-		if _quiz_choice_rect(i).has_point(pos): return i
+		if _quiz_choice_rect(i).has_point(canvas_position): return i
 	return -1
 
 func _quiz_choice_rect(index: int) -> Rect2:
-	return Rect2(140.0 + index * 350.0, 310.0, 300.0, 150.0)
+	return Rect2(140.0 + index * 350.0, 400.0, 300.0, 150.0)
+
+func _quiz_reveal_rect() -> Rect2:
+	return Rect2(456.0, 236.0, 180.0, 48.0)
+
+func _quiz_reveal_hit(viewport_position: Vector2) -> bool:
+	return _quiz_reveal_rect().grow(10.0).has_point(_canvas_pointer_position(viewport_position))
 
 func _quiz_place_value_parts() -> Dictionary:
 	return {"tens": int(quiz_number / 10), "ones": quiz_number % 10}
+
+func _quiz_dot_count() -> int:
+	return quiz_table * quiz_number if quiz_dots_revealed else quiz_table
+
+func _draw_ten_frame_dots(count: int, origin: Vector2, frames_per_row: int, dot_color: Color) -> void:
+	var frame_count: int = maxi(1, int(ceil(float(count) / 10.0)))
+	for frame_index in range(frame_count):
+		var frame_origin := origin + Vector2(float(frame_index % frames_per_row) * 68.0, float(int(frame_index / frames_per_row)) * 38.0)
+		var frame_rect := Rect2(frame_origin, Vector2(60.0, 30.0))
+		draw_rect(frame_rect, Color("#11183e")); draw_rect(frame_rect, dot_color.darkened(0.15), false, 1.0)
+		for slot in range(10):
+			var dot_index: int = frame_index * 10 + slot
+			var dot_position := frame_origin + Vector2(9.0 + float(slot % 5) * 10.5, 8.0 + float(int(slot / 5)) * 13.0)
+			draw_circle(dot_position, 3.8, dot_color if dot_index < count else Color("#344167"))
+
+func _draw_multiplication_groups(group_count: int, dots_per_group: int, origin: Vector2) -> void:
+	for group_index in range(group_count):
+		var row_y: float = origin.y + float(group_index) * 11.5
+		var group_width: float = float(dots_per_group) * 12.5 + 8.0
+		var group_rect := Rect2(Vector2(origin.x, row_y - 5.0), Vector2(group_width, 11.0))
+		draw_rect(group_rect, Color("#11183e")); draw_rect(group_rect, Color("#f5e27e").darkened(0.22), false, 1.0)
+		for dot_index in range(dots_per_group):
+			var dot_position := Vector2(origin.x + 7.0 + float(dot_index) * 12.5, row_y)
+			draw_circle(dot_position, 3.8, Color("#f5e27e"))
+			if dot_index == 9 and dots_per_group > 10:
+				draw_line(Vector2(dot_position.x + 6.0, row_y - 5.0), Vector2(dot_position.x + 6.0, row_y + 5.0), Color("#7cf5ff"), 1.5)
 
 func _update_particles(delta: float) -> void:
 	for i in range(particles.size() - 1, -1, -1):
@@ -1814,26 +1856,29 @@ func _draw_shop() -> void:
 
 func _draw_quiz() -> void:
 	var feedback: bool = quiz_feedback_time > 0.0
-	draw_rect(Rect2(Vector2.ZERO, VIEW), Color(0.03, 0.02, 0.12, 0.78)); draw_rect(Rect2(90, 24, 1100, 270), Color("#11183e")); draw_rect(Rect2(90, 24, 1100, 270), Color("#ff9dbc") if feedback else Color("#7cf5ff"), false, 4.0); draw_string(ThemeDB.fallback_font, Vector2(0, 82), "ANSWER REVIEW" if feedback else "TIMETABLE QUIZ", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 22, Color("#ff9dbc") if feedback else Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, Vector2(0, 190), "%d × %d = ?" % [quiz_table, quiz_number], HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 64, Color("#ffffff"))
+	draw_rect(Rect2(Vector2.ZERO, VIEW), Color(0.03, 0.02, 0.12, 0.78)); draw_rect(Rect2(90, 24, 1100, 360), Color("#11183e")); draw_rect(Rect2(90, 24, 1100, 360), Color("#ff9dbc") if feedback else Color("#7cf5ff"), false, 4.0); draw_string(ThemeDB.fallback_font, Vector2(0, 82), "ANSWER REVIEW" if feedback else "TIMETABLE QUIZ", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 22, Color("#ff9dbc") if feedback else Color("#7cf5ff")); draw_string(ThemeDB.fallback_font, Vector2(0, 190), "%d × %d = ?" % [quiz_table, quiz_number], HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 64, Color("#ffffff"))
 	if feedback:
 		draw_string(ThemeDB.fallback_font, Vector2(0, 250), quiz_feedback_text, HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 21, Color("#f5e27e")); draw_string(ThemeDB.fallback_font, Vector2(0, 420), "CHECKPOINT RESTART IN %.1f" % max(0.0, quiz_feedback_time), HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 25, Color("#ff9ab4")); draw_string(ThemeDB.fallback_font, Vector2(0, 485), "Read the correction, then try the beat again", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 18, Color("#a9b8ef"))
 	else:
 		if difficulty_index <= 1:
-			var parts: Dictionary = _quiz_place_value_parts()
-			var tens_cell := Rect2(430.0, 207.0, 190.0, 62.0)
-			var ones_cell := Rect2(660.0, 207.0, 190.0, 62.0)
-			draw_rect(tens_cell, Color("#182450")); draw_rect(tens_cell, Color("#7cf5ff"), false, 2.0)
-			draw_rect(ones_cell, Color("#182450")); draw_rect(ones_cell, Color("#f5e27e"), false, 2.0)
-			draw_string(ThemeDB.fallback_font, tens_cell.position + Vector2(0, 20), "TENS", HORIZONTAL_ALIGNMENT_CENTER, tens_cell.size.x, 13, Color("#7cf5ff"))
-			draw_string(ThemeDB.fallback_font, tens_cell.position + Vector2(0, 47), "%d  (%d groups of 10)" % [int(parts["tens"]), int(parts["tens"])], HORIZONTAL_ALIGNMENT_CENTER, tens_cell.size.x, 19, Color("#ffffff"))
-			draw_string(ThemeDB.fallback_font, ones_cell.position + Vector2(0, 20), "ONES", HORIZONTAL_ALIGNMENT_CENTER, ones_cell.size.x, 13, Color("#f5e27e"))
-			draw_string(ThemeDB.fallback_font, ones_cell.position + Vector2(0, 47), "%d ones" % int(parts["ones"]), HORIZONTAL_ALIGNMENT_CENTER, ones_cell.size.x, 19, Color("#ffffff"))
-			var tens_product: int = int(parts["tens"]) * 10
-			draw_string(ThemeDB.fallback_font, Vector2(0, 291), "%d × %d = (%d × %d) + (%d × %d)" % [quiz_table, quiz_number, quiz_table, tens_product, quiz_table, int(parts["ones"])], HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 17, Color("#a8ffd0"))
+			var start_label := "START WITH %d DOTS" % quiz_table
+			var result_label: String = "%d GROUPS OF %d" % [quiz_number, quiz_table]
+			if not quiz_dots_revealed: result_label = "TAP ×%d TO REVEAL" % quiz_number
+			draw_string(ThemeDB.fallback_font, Vector2(245, 228), start_label, HORIZONTAL_ALIGNMENT_CENTER, 160, 14, Color("#7cf5ff"))
+			_draw_ten_frame_dots(quiz_table, Vector2(262, 240), 2, Color("#7cf5ff"))
+			var reveal_rect: Rect2 = _quiz_reveal_rect()
+			draw_rect(reveal_rect, Color("#26336e") if not quiz_dots_revealed else Color("#386d70")); draw_rect(reveal_rect, Color("#a8ffd0"), false, 3.0)
+			draw_string(ThemeDB.fallback_font, reveal_rect.position + Vector2(0, 30), "× %d  %s" % [quiz_number, "SHOWN" if quiz_dots_revealed else "MULTIPLY"], HORIZONTAL_ALIGNMENT_CENTER, reveal_rect.size.x, 17, Color("#ffffff"))
+			draw_string(ThemeDB.fallback_font, Vector2(680, 228), result_label, HORIZONTAL_ALIGNMENT_CENTER, 410, 14, Color("#f5e27e") if quiz_dots_revealed else Color("#a9b8ef"))
+			if quiz_dots_revealed:
+				_draw_multiplication_groups(quiz_number, quiz_table, Vector2(790, 240))
+			else:
+				draw_string(ThemeDB.fallback_font, Vector2(680, 270), "Press the × button to make equal groups", HORIZONTAL_ALIGNMENT_CENTER, 410, 15, Color("#a9b8ef"))
 		else:
-			draw_string(ThemeDB.fallback_font, Vector2(0, 246), "Only the answer buttons are active", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 17, Color("#a9b8ef"))
+			draw_string(ThemeDB.fallback_font, Vector2(0, 275), "Choose the correct answer", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 17, Color("#a9b8ef"))
 		for i in range(3):
 			var rect: Rect2 = _quiz_choice_rect(i); draw_rect(rect, Color("#26336e")); draw_rect(rect, Color("#b06cff"), false, 5.0); draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, 108), "%d" % quiz_choices[i], HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 58, Color("#f5e27e"))
+		if difficulty_index <= 1: draw_string(ThemeDB.fallback_font, Vector2(0, 585), "H / SPACE OR TAP ×%d TO SHOW DOT GROUPS" % quiz_number, HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 14, Color("#a9b8ef"))
 		draw_string(ThemeDB.fallback_font, Vector2(0, 620), "TIME LEFT %.1f" % max(0.0, quiz_time), HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 22, Color("#ff9ab4"))
 
 func _draw_builder() -> void:

@@ -25,7 +25,8 @@ static func difficulty_settings(difficulty: int) -> Dictionary:
 	var shields: Array = [4, 3, 2]
 	var perfect_windows: Array = [0.15, 0.10, 0.08]
 	var good_windows: Array = [0.30, 0.24, 0.18]
-	return {"name": DIFFICULTIES[safe_difficulty], "shields": shields[safe_difficulty], "perfect_window": perfect_windows[safe_difficulty], "good_window": good_windows[safe_difficulty]}
+	var quiz_times: Array = [15.0, 12.0, 10.0]
+	return {"name": DIFFICULTIES[safe_difficulty], "shields": shields[safe_difficulty], "perfect_window": perfect_windows[safe_difficulty], "good_window": good_windows[safe_difficulty], "quiz_time": quiz_times[safe_difficulty]}
 
 static func migrate_best_scores(legacy_scores: Variant, tier_scores: Variant) -> Array:
 	var result: Array = [0, 0, 0, 0, 0, 0, 0, 0, 0]
