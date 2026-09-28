@@ -1,10 +1,10 @@
 class_name LevelData
 extends RefCounted
 
-const VERSION: int = 2
-const LEVEL_COUNT: int = 3
+const VERSION: int = 3
+const LEVEL_COUNT: int = 4
 const DEFAULT_TRACK: String = "cyberpunk-menu-music.mp3"
-const MUSIC_TRACKS: Array = ["cyberpunk-menu-music.mp3", "murder-on-the-metrorail.ogg", "boss-fight.ogg"]
+const MUSIC_TRACKS: Array = ["cyberpunk-menu-music.mp3", "murder-on-the-metrorail.ogg", "boss-fight.ogg", "funky-chiptune.ogg"]
 const FLOOR_HAZARD_CLUSTER_WINDOW_BEATS: float = 1.75
 const MAX_FLOOR_HAZARDS_IN_JUMP_WINDOW: int = 3
 const BOSS_CORRIDOR_AFTER_BEATS: float = 0.50
@@ -14,8 +14,40 @@ static func level_catalog() -> Array:
 	return [
 		{"name": "BONE CARNIVAL", "subtitle": "Kawaii skeleton chase", "track": "cyberpunk-menu-music.mp3", "bpm": 120.0, "theme": "skeleton", "length_beats": 184.0, "chase_beat": 92.0},
 		{"name": "METRORAIL MAYHEM", "subtitle": "Ghost train pursuit", "track": "murder-on-the-metrorail.ogg", "bpm": 116.0, "theme": "metro", "length_beats": 196.0, "chase_beat": 0.0},
-		{"name": "ZOMBIE VILLAGE RUN", "subtitle": "A relentless villager pursuit", "track": "boss-fight.ogg", "bpm": 128.0, "theme": "zombie", "length_beats": 210.0, "chase_beat": 0.0}
+		{"name": "ZOMBIE VILLAGE RUN", "subtitle": "A relentless villager pursuit", "track": "boss-fight.ogg", "bpm": 128.0, "theme": "zombie", "length_beats": 210.0, "chase_beat": 0.0},
+		{"name": "DIGITAL ARCADE CORE", "subtitle": "Switch perspective and breach the core", "track": "funky-chiptune.ogg", "bpm": 132.0, "theme": "arcade", "length_beats": 224.0, "chase_beat": 160.0}
 	]
+
+static func course_blueprint(index: int) -> Dictionary:
+	var safe_index: int = clampi(index, 0, LEVEL_COUNT - 1)
+	var sections: Array = []
+	if safe_index == 0:
+		sections = [_section(0, 48, "teach", "side"), _section(48, 96, "combine", "side"), _section(96, 144, "escalate", "side"), _section(144, 184, "boss", "side")]
+	elif safe_index == 1:
+		sections = [_section(0, 52, "teach", "side"), _section(52, 108, "combine", "side"), _section(108, 156, "gravity", "side"), _section(156, 196, "boss", "side")]
+	elif safe_index == 2:
+		sections = [_section(0, 56, "teach", "side"), _section(56, 112, "combine", "side"), _section(112, 160, "escalate", "side"), _section(160, 210, "boss", "side")]
+	else:
+		sections = [_section(0, 48, "side_intro", "side"), _section(48, 104, "lane_chase", "behind"), _section(104, 160, "gravity_side", "side"), _section(160, 224, "core_boss", "behind")]
+	return {"level_index": safe_index, "seed": 4200 + safe_index * 997, "chunk_beats": 8.0, "sections": sections, "rules": course_generation_rules(1)}
+
+static func _section(start_beat: float, end_beat: float, role: String, camera: String) -> Dictionary:
+	return {"start_beat": start_beat, "end_beat": end_beat, "role": role, "camera": camera, "transition_beats": 2.0}
+
+static func camera_sections(index: int) -> Array:
+	return course_blueprint(index)["sections"].map(func(section: Dictionary) -> Dictionary: return {"start_beat": section["start_beat"], "end_beat": section["end_beat"], "mode": section["camera"], "transition_beats": section["transition_beats"]})
+
+static func course_generation_rules(difficulty: int) -> Dictionary:
+	var safe_difficulty := clampi(difficulty, 0, 2)
+	return {
+		"difficulty": DIFFICULTIES[safe_difficulty],
+		"hazards_per_chunk": [1, 2, 3][safe_difficulty],
+		"minimum_reaction_beats": [2.25, 1.75, 1.35][safe_difficulty],
+		"telegraph_beats": [2.0, 1.5, 1.25][safe_difficulty],
+		"gravity_requires_ceiling_route": true,
+		"boss_requires_clear_runway": true,
+		"behind_requires_open_lane": true
+	}
 
 static func default_level() -> Dictionary:
 	return campaign_level(0)
@@ -29,15 +61,19 @@ static func difficulty_settings(difficulty: int) -> Dictionary:
 	return {"name": DIFFICULTIES[safe_difficulty], "shields": shields[safe_difficulty], "perfect_window": perfect_windows[safe_difficulty], "good_window": good_windows[safe_difficulty], "quiz_time": quiz_times[safe_difficulty]}
 
 static func migrate_best_scores(legacy_scores: Variant, tier_scores: Variant) -> Array:
-	var result: Array = [0, 0, 0, 0, 0, 0, 0, 0, 0]
-	if tier_scores is Array and tier_scores.size() >= 9:
-		for i in range(9): result[i] = maxi(0, int(tier_scores[i]))
+	var result: Array = []
+	result.resize(LEVEL_COUNT * 3)
+	result.fill(0)
+	if tier_scores is Array and not tier_scores.is_empty():
+		for i in range(mini(result.size(), tier_scores.size())): result[i] = maxi(0, int(tier_scores[i]))
 	elif legacy_scores is Array:
 		for i in range(mini(LEVEL_COUNT, legacy_scores.size())): result[i * 3 + 1] = maxi(0, int(legacy_scores[i]))
 	return result
 
 static func normalize_difficulty_unlocks(raw: Variant) -> Array:
-	var result: Array = [0, 0, 0]
+	var result: Array = []
+	result.resize(LEVEL_COUNT)
+	result.fill(0)
 	if raw is Array:
 		for i in range(mini(LEVEL_COUNT, raw.size())): result[i] = clampi(int(raw[i]), 0, 2)
 	return result
@@ -109,7 +145,7 @@ static func campaign_level(index: int, difficulty: int = 1) -> Dictionary:
 			["platform", 100.0, 1.0, {"width": 2.5, "height": 0.25}],
 			["star", 100.5, 1.7, {}]
 		])
-	else:
+	elif safe_index == 2:
 		for beat in range(4, 210):
 			if beat % 5 == 0 or beat % 9 == 0:
 				objects.append(_object("spike", beat, 0.0, {}, number)); number += 1
@@ -147,9 +183,50 @@ static func campaign_level(index: int, difficulty: int = 1) -> Dictionary:
 			["platform", 110.0, 1.15, {"width": 2.8, "height": 0.25}],
 			["star", 110.5, 1.85, {}]
 		])
+	else:
+		# Level 4 alternates readable side-view chunks with three-lane chase
+		# chunks. Every behind-view row deliberately leaves at least one lane open.
+		for beat in range(6, 46, 6):
+			objects.append(_object("spike", float(beat), 0.0, {"telegraph_beats": 2.0}, number)); number += 1
+			if beat % 12 == 0:
+				objects.append(_object("star", float(beat) + 1.0, 1.0, {}, number)); number += 1
+		for row_beat in range(52, 102, 4):
+			var open_lane: int = int(row_beat / 4) % 3 - 1
+			for track_lane in [-1, 0, 1]:
+				if track_lane == open_lane: continue
+				var action: String = "jump" if (row_beat + track_lane) % 3 == 0 else "lane"
+				objects.append(_object("spike" if action == "jump" else "block", float(row_beat), 0.0, {"track_lane": track_lane, "behind_action": action, "telegraph_beats": 3.0}, number)); number += 1
+		objects.append(_object("gravity_portal", 108.0, 0.0, {"duration_beats": 48.0}, number)); number += 1
+		for beat in range(112, 156, 6):
+			objects.append(_object("spike", float(beat), 0.0, {"surface": "ceiling", "telegraph_beats": 2.0}, number)); number += 1
+			objects.append(_object("star", float(beat) + 1.5, 2.7, {"surface": "ceiling"}, number)); number += 1
+		for row_beat in range(164, 222, 4):
+			var boss_open_lane: int = (int(row_beat / 4) + 1) % 3 - 1
+			for track_lane in [-1, 0, 1]:
+				if track_lane == boss_open_lane: continue
+				var boss_action: String = "dash" if row_beat % 12 == 0 else "lane"
+				objects.append(_object("block", float(row_beat), 0.0, {"track_lane": track_lane, "behind_action": boss_action, "core_boss": true, "telegraph_beats": 3.5}, number)); number += 1
+		for beat in [44.0, 100.0, 156.0, 200.0]:
+			objects.append(_object("checkpoint", beat, 0.0, {}, number)); number += 1
+		for beat in [28.0, 88.0, 140.0, 188.0]: triggers.append(_quiz("quiz-%03d" % int(beat), beat, 5))
+	# Every gravity portal has a authored ceiling route. The portal is no longer
+	# a cosmetic effect: the player must read and negotiate inverted hazards.
+	if safe_index == 0: number = _add_gravity_route(objects, number, 88.0, 8.0)
+	elif safe_index == 1: number = _add_gravity_route(objects, number, 108.0, 7.0)
+	elif safe_index == 2: number = _add_gravity_route(objects, number, 76.0, 9.0)
+	else: number = _add_gravity_route(objects, number, 108.0, 48.0)
 	_apply_difficulty_layout(objects, safe_difficulty, safe_index, length_beats)
 	_repair_generated_playability(objects, safe_index, length_beats, safe_difficulty)
-	return {"version": VERSION, "level_index": safe_index, "difficulty": safe_difficulty, "display_name": meta["name"], "subtitle": meta["subtitle"], "theme": meta["theme"], "chase_beat": meta["chase_beat"], "music": {"track": meta["track"], "bpm": meta["bpm"], "beat_offset_seconds": 0.0}, "length_beats": length_beats, "objects": objects, "triggers": triggers}
+	return {"version": VERSION, "level_index": safe_index, "difficulty": safe_difficulty, "display_name": meta["name"], "subtitle": meta["subtitle"], "theme": meta["theme"], "chase_beat": meta["chase_beat"], "music": {"track": meta["track"], "bpm": meta["bpm"], "beat_offset_seconds": 0.0}, "length_beats": length_beats, "objects": objects, "triggers": triggers, "camera_sections": camera_sections(safe_index), "generation_seed": course_blueprint(safe_index)["seed"]}
+
+static func _add_gravity_route(objects: Array, number: int, portal_beat: float, duration_beats: float) -> int:
+	objects.append(_object("platform", portal_beat + 0.75, 0.0, {"surface": "ceiling", "width": 3.0, "height": 0.25, "course_required": true}, number)); number += 1
+	for offset in [2.25, 4.75, 6.5]:
+		if offset >= duration_beats - 0.5: continue
+		objects.append(_object("spike", portal_beat + offset, 0.0, {"surface": "ceiling", "telegraph_beats": 2.0, "course_required": true}, number)); number += 1
+		objects.append(_object("star", portal_beat + offset + 0.75, 2.8, {"surface": "ceiling"}, number)); number += 1
+	objects.append(_object("platform", portal_beat + duration_beats - 0.75, 0.0, {"surface": "ceiling", "width": 2.5, "height": 0.25, "course_required": true}, number)); number += 1
+	return number
 
 static func _apply_difficulty_layout(objects: Array, difficulty: int, level_index: int, length_beats: float) -> void:
 	if difficulty == 1: return
@@ -157,13 +234,18 @@ static func _apply_difficulty_layout(objects: Array, difficulty: int, level_inde
 		var hazard_number := 0
 		for i in range(objects.size() - 1, -1, -1):
 			if _is_hazard(objects[i]):
+				if bool(objects[i]["properties"].get("course_required", false)): continue
 				hazard_number += 1
 				if hazard_number % 5 == 0: objects.remove_at(i)
 		return
 	var number := 9500
 	for beat in range(14, int(length_beats) - 4, 23):
 		var offset := float((beat + level_index * 3) % 5) * 0.25
-		objects.append(_object("spike", float(beat) + offset, 0.0, {}, number))
+		var properties: Dictionary = {"telegraph_beats": float(course_generation_rules(difficulty)["telegraph_beats"])}
+		if level_index == 3 and ((beat >= 48 and beat < 104) or beat >= 160):
+			properties["track_lane"] = (beat + level_index) % 3 - 1
+			properties["behind_action"] = "lane"
+		objects.append(_object("spike", float(beat) + offset, 0.0, properties, number))
 		number += 1
 
 static func _add_pattern(objects: Array, number: int, pattern: Array) -> int:
@@ -184,7 +266,8 @@ static func boss_attack_interval(index: int, difficulty: int = 1) -> float:
 	var safe_difficulty: int = clampi(difficulty, 0, DIFFICULTIES.size() - 1)
 	if index == 0: return [10.0, 8.0, 6.0][safe_difficulty]
 	if index == 1: return [22.0, 18.0, 15.0][safe_difficulty]
-	return [24.0, 20.0, 16.0][safe_difficulty]
+	if index == 2: return [24.0, 20.0, 16.0][safe_difficulty]
+	return [12.0, 8.0, 6.0][safe_difficulty]
 
 static func boss_attack_windows(index: int, difficulty: int = 1) -> Array:
 	var safe_index: int = clampi(index, 0, LEVEL_COUNT - 1)
@@ -211,6 +294,9 @@ static func boss_attack_windows(index: int, difficulty: int = 1) -> Array:
 				windows.append({"beat": zombie_beat, "kind": "zombie_shockwave", "runway_beats": 2.50})
 				zombie_beat += boss_attack_interval(safe_index, difficulty)
 			windows.append({"beat": zombie_final_beat, "kind": "zombie_shockwave", "runway_beats": 2.50})
+		3:
+			for core_beat in range(164, 224, int(boss_attack_interval(safe_index, difficulty))):
+				windows.append({"beat": float(core_beat), "kind": "core_lane_wall", "runway_beats": 3.0})
 	return windows
 
 static func playability_report(index: int, raw_objects: Variant = null) -> Dictionary:
@@ -247,8 +333,36 @@ static func _build_playability_report(index: int, source_objects: Array, difficu
 		if cluster_count > MAX_FLOOR_HAZARDS_IN_JUMP_WINDOW:
 			hazard_conflicts.append({"type": "dense_floor_hazards", "hazard_id": last_cluster_hazard["id"], "beat": last_cluster_hazard["beat"], "count": cluster_count})
 	var runways: Array = []
+	var gravity_routes: Array = []
+	for portal in source_objects:
+		if portal["type"] != "gravity_portal": continue
+		var portal_beat := float(portal["beat"])
+		var gravity_end := portal_beat + float(portal["properties"].get("duration_beats", 8.0))
+		var ceiling_hazards := 0
+		var ceiling_platforms := 0
+		for candidate in source_objects:
+			var candidate_beat := float(candidate["beat"])
+			if candidate_beat <= portal_beat or candidate_beat >= gravity_end: continue
+			if str(candidate["properties"].get("surface", "floor")) != "ceiling": continue
+			if _is_hazard(candidate): ceiling_hazards += 1
+			if candidate["type"] == "platform" or candidate["type"] == "moving_platform": ceiling_platforms += 1
+		var route_passes := ceiling_hazards > 0 and ceiling_platforms > 0
+		if not route_passes: hazard_conflicts.append({"type": "gravity_route_incomplete", "beat": portal_beat})
+		gravity_routes.append({"start_beat": portal_beat, "end_beat": gravity_end, "ceiling_hazards": ceiling_hazards, "ceiling_platforms": ceiling_platforms, "pass": route_passes})
+	if index == 3:
+		for row_beat in range(52, 102, 4): _check_lane_row(source_objects, float(row_beat), hazard_conflicts)
+		for row_beat in range(164, 222, 4): _check_lane_row(source_objects, float(row_beat), hazard_conflicts)
 	for window in boss_attack_windows(index, difficulty):
 		var attack_beat: float = float(window["beat"])
+		if str(window["kind"]) == "core_lane_wall":
+			var blocked_lanes: Dictionary = {}
+			for lane_object in source_objects:
+				if absf(float(lane_object["beat"]) - attack_beat) <= 0.05 and lane_object["properties"].has("track_lane"):
+					blocked_lanes[int(lane_object["properties"]["track_lane"])] = true
+			var lane_passes := blocked_lanes.size() < 3
+			if not lane_passes: hazard_conflicts.append({"type": "behind_no_open_lane", "beat": attack_beat})
+			runways.append({"beat": attack_beat, "platform_available": false, "floor_launch_clear": lane_passes, "blocking_hazards": [], "pass": lane_passes})
+			continue
 		var runway_start: float = attack_beat - float(window["runway_beats"])
 		var runway_end: float = attack_beat - 0.75
 		var platform_available := false
@@ -273,13 +387,20 @@ static func _build_playability_report(index: int, source_objects: Array, difficu
 		if not blocking_hazards.is_empty():
 			hazard_conflicts.append({"type": "boss_jump_corridor_blocked", "beat": attack_beat, "hazard_ids": blocking_hazards})
 		runways.append({"beat": attack_beat, "platform_available": platform_available, "floor_launch_clear": floor_launch_clear, "blocking_hazards": blocking_hazards, "pass": runway_passes and blocking_hazards.is_empty()})
-	return {"level_index": index, "difficulty": difficulty, "boss_attack_beats": boss_attack_windows(index, difficulty).map(func(window: Dictionary) -> float: return float(window["beat"])), "runways": runways, "hazard_conflicts": hazard_conflicts, "pass": hazard_conflicts.is_empty()}
+	return {"level_index": index, "difficulty": difficulty, "boss_attack_beats": boss_attack_windows(index, difficulty).map(func(window: Dictionary) -> float: return float(window["beat"])), "runways": runways, "gravity_routes": gravity_routes, "hazard_conflicts": hazard_conflicts, "pass": hazard_conflicts.is_empty()}
+
+static func _check_lane_row(source_objects: Array, beat: float, conflicts: Array) -> void:
+	var blocked: Dictionary = {}
+	for object in source_objects:
+		if absf(float(object["beat"]) - beat) > 0.05: continue
+		if object["properties"].has("track_lane"): blocked[int(object["properties"]["track_lane"])] = true
+	if blocked.size() >= 3: conflicts.append({"type": "behind_no_open_lane", "beat": beat})
 
 static func _is_hazard(object: Dictionary) -> bool:
 	return object["type"] == "spike" or object["type"] == "block" or object["type"] == "saw"
 
 static func _is_floor_hazard(object: Dictionary) -> bool:
-	return _is_hazard(object) and float(object["lane"]) <= 0.05
+	return _is_hazard(object) and float(object["lane"]) <= 0.05 and str(object["properties"].get("surface", "floor")) != "ceiling" and not object["properties"].has("track_lane")
 
 static func _is_blocking_jump_hazard(object: Dictionary) -> bool:
 	if not _is_hazard(object): return false
@@ -362,7 +483,19 @@ static func validate(raw: Variant) -> Dictionary:
 	result["music"] = {"track": selected_track, "bpm": clampf(float(music.get("bpm", default_meta["bpm"])), 40.0, 240.0), "beat_offset_seconds": float(music.get("beat_offset_seconds", 0.0))}
 	result["objects"] = _clean_objects(source.get("objects", []))
 	result["triggers"] = _clean_triggers(source.get("triggers", []))
+	result["camera_sections"] = _clean_camera_sections(source.get("camera_sections", result["camera_sections"]), safe_index)
+	result["generation_seed"] = int(source.get("generation_seed", result["generation_seed"]))
 	return result
+
+static func _clean_camera_sections(raw: Variant, level_index: int) -> Array:
+	if not raw is Array: return camera_sections(level_index)
+	var cleaned: Array = []
+	for item in raw:
+		if not item is Dictionary: continue
+		var mode := str(item.get("mode", "side"))
+		if mode != "side" and mode != "behind": continue
+		cleaned.append({"start_beat": maxf(0.0, float(item.get("start_beat", 0.0))), "end_beat": maxf(0.0, float(item.get("end_beat", 0.0))), "mode": mode, "transition_beats": clampf(float(item.get("transition_beats", 2.0)), 0.0, 8.0)})
+	return cleaned if not cleaned.is_empty() else camera_sections(level_index)
 
 static func _clean_objects(raw: Variant) -> Array:
 	var cleaned: Array = []

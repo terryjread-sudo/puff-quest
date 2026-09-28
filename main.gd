@@ -11,7 +11,7 @@ const JUMP_VELOCITY := -720.0
 const DASH_SPEED := 920.0
 const DASH_TIME := 0.20
 const PALETTE := ["block", "spike", "saw", "catapult", "timetable", "bounce_pad", "platform", "moving_platform", "gravity_portal", "speed_ring", "star", "checkpoint"]
-const LEVEL_COUNT := 3
+const LEVEL_COUNT := 4
 const BEAT_FLASH_STRENGTH := 0.055
 const INTRO_CLEAR_SECONDS := 6.0
 const AUDIO_RESYNC_SECONDS := 0.28
@@ -43,8 +43,8 @@ var selected_level_index := 0
 var difficulty_index := 0
 var selected_difficulty_index := 0
 var unlocked_level := 0
-var difficulty_unlocked: Array = [0, 0, 0]
-var best_scores: Array = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+var difficulty_unlocked: Array = [0, 0, 0, 0]
+var best_scores: Array = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 var diamonds := 0
 var owned_skins: Array[String] = ["classic"]
 var equipped_skin := "classic"
@@ -180,6 +180,11 @@ var pan_dragging := false
 var pan_last_x := 0.0
 var pan_moved := false
 var pending_place_pos := Vector2.ZERO
+var orientation_pause_token := 0
+var pause_reason := ""
+var runner_lane := 0
+var touch_start := Vector2.ZERO
+var touch_tracking := false
 
 func _ready() -> void:
 	rng.seed = 20260918
@@ -211,6 +216,8 @@ func _ready() -> void:
 	slime_attack_player.volume_db = -4.0
 	add_child(slime_attack_player)
 	queue_redraw()
+	if OS.has_feature("web"):
+		orientation_pause_token = int(JavaScriptBridge.eval("window.neonTwiceOrientationPauseToken || 0"))
 
 func _apply_level(data: Dictionary) -> void:
 	level = LevelData.validate(data)
@@ -221,6 +228,7 @@ func _apply_level(data: Dictionary) -> void:
 	runtime_objects.clear()
 	consumed.clear(); triggered.clear(); catapult_state.clear()
 	gravity_sign = 1.0; gravity_until = 0.0; speed_boost_multiplier = 1.0
+	runner_lane = 0
 	chase_started = false; chase_flash = 0.0; slam_next_beat = -1.0; slam_offset = 0.0; slam_velocity = 0.0; slam_timer = 0.0; slam_flash = 0.0
 	ghost_attack_timer = 0.0; ghost_attack_elapsed = 0.0; ghost_attack_next_beat = -1.0; ghost_attack_phase_started = false; ghost_attack_resolved = false; ghost_attack_dodged = false; ghost_attack_pattern = 0; ghost_attack_count = 0; ghost_wave_hit = false; ghost_wave_active = false; ghost_wave_x = -1.0; ghost_wave_previous_x = -1.0; ghost_wave_offsets.clear(); ghost_final_started = false; ghost_final_timer = 0.0; ghost_final_resolved = false; ghost_defeated_pending = false; ghost_end_death_started = false; ghost_death_timer = 0.0
 	slime_walk_time = 0.0; slime_attack_timer = 0.0; slime_attack_elapsed = 0.0; slime_attack_resolved = false; slime_attack_next_beat = -1.0; slime_attack_phase_started = false; slime_attack_visible = true; slime_attack_cooldown = 0.0; _reset_zombie_attack_state(); slime_end_death_started = false; slime_death_timer = 0.0
@@ -331,6 +339,10 @@ func _pace_multiplier() -> float:
 func _process(delta: float) -> void:
 	var dt: float = min(delta, 0.05)
 	background_time += dt
+	_poll_orientation_pause()
+	if paused:
+		queue_redraw()
+		return
 	message_time = max(0.0, message_time - dt); flash = max(0.0, flash - dt)
 	beat_feedback_time = max(0.0, beat_feedback_time - dt)
 	quiz_input_lock = max(0.0, quiz_input_lock - dt)
@@ -370,6 +382,39 @@ func _process(delta: float) -> void:
 	else: _run_step(dt)
 	queue_redraw()
 
+func _poll_orientation_pause() -> void:
+	if not OS.has_feature("web"): return
+	var current_token := int(JavaScriptBridge.eval("window.neonTwiceOrientationPauseToken || 0"))
+	if current_token == orientation_pause_token: return
+	orientation_pause_token = current_token
+	if started and not finished: _set_paused(true, "ORIENTATION CHANGED")
+
+func _set_paused(value: bool, reason: String = "") -> void:
+	paused = value
+	pause_reason = reason if value else ""
+	if music_player != null:
+		if value:
+			music_last_position = music_player.get_playback_position()
+			music_player.stream_paused = true
+		else:
+			_resume_music(music_last_position)
+	music_expected_playing = not value and started and not finished and not build_mode
+
+func _pause_button_rect() -> Rect2:
+	return Rect2(VIEW.x - 150.0, 112.0, 116.0, 46.0)
+
+func _pause_resume_rect() -> Rect2:
+	return Rect2(440.0, 300.0, 400.0, 66.0)
+
+func _pause_quit_rect() -> Rect2:
+	return Rect2(440.0, 392.0, 400.0, 66.0)
+
+func _pause_pointer_action(viewport_position: Vector2) -> bool:
+	var logical := _canvas_pointer_position(viewport_position)
+	if _pause_resume_rect().has_point(logical): _set_paused(false); return true
+	if _pause_quit_rect().has_point(logical): _return_to_menu(); return true
+	return false
+
 func _run_step(delta: float) -> void:
 	run_time += delta
 	if ghost_end_death_started or slime_end_death_started:
@@ -407,8 +452,12 @@ func _run_step(delta: float) -> void:
 	for platform in objects:
 		if platform["type"] != "moving_platform" and platform["type"] != "platform": continue
 		var platform_rect := _object_rect(platform)
-		if velocity.y >= 0.0 and Rect2(player, PLAYER_SIZE).intersects(platform_rect) and player.y + PLAYER_SIZE.y - platform_rect.position.y < 24.0:
+		var ceiling_surface := str(platform["properties"].get("surface", "floor")) == "ceiling"
+		if not ceiling_surface and velocity.y >= 0.0 and Rect2(player, PLAYER_SIZE).intersects(platform_rect) and player.y + PLAYER_SIZE.y - platform_rect.position.y < 24.0:
 			player.y = platform_rect.position.y - PLAYER_SIZE.y
+			velocity.y = 0.0
+		elif ceiling_surface and gravity_sign < 0.0 and velocity.y <= 0.0 and Rect2(player, PLAYER_SIZE).intersects(platform_rect):
+			player.y = platform_rect.end.y
 			velocity.y = 0.0
 	if not grounded and _is_grounded(): _spawn_skin_burst(player + PLAYER_SIZE * 0.5, 7)
 	if player.y > VIEW.y + 160.0 or player.y < -180.0:
@@ -419,7 +468,9 @@ func _run_step(delta: float) -> void:
 	_update_zombie_encounter(delta)
 	_update_objects()
 	if intro_time_left <= 0.0:
-		_check_objects(); _check_triggers()
+		if _camera_mode() == "behind": _check_behind_objects()
+		else: _check_objects()
+		_check_triggers()
 	if crash_timer > 0.0: return
 	for i in range(checkpoint_beats.size()):
 		if player.x >= START_X + checkpoint_beats[i] * _beat_width(): checkpoint_index = i
@@ -436,6 +487,18 @@ func _quiz_step(delta: float) -> void:
 	if quiz_time <= 0.0: _answer_quiz(-1)
 
 func _input(event: InputEvent) -> void:
+	if paused:
+		if event.is_action_pressed("ui_cancel"): _set_paused(false); return
+		if event is InputEventMouseButton and event.pressed: _pause_pointer_action(event.position); return
+		if event is InputEventScreenTouch and event.pressed: _pause_pointer_action(event.position); return
+		return
+	if event.is_action_pressed("ui_cancel") and started and not finished and not build_mode:
+		_set_paused(true, "PAUSED"); return
+	if started and not finished and not build_mode:
+		if event is InputEventMouseButton and event.pressed and _pause_button_rect().grow(12.0).has_point(_canvas_pointer_position(event.position)):
+			_set_paused(true, "PAUSED"); return
+		if event is InputEventScreenTouch and event.pressed and _pause_button_rect().grow(18.0).has_point(_canvas_pointer_position(event.position)):
+			_set_paused(true, "PAUSED"); return
 	if quiz_feedback_time > 0.0: return
 	if quiz_active:
 		if quiz_input_lock > 0.0: return
@@ -461,11 +524,10 @@ func _input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel") and started:
 		if finished: _return_to_menu()
 		elif build_mode: _exit_builder()
-		else: paused = not paused
-		if paused or build_mode:
+		else: _set_paused(true, "PAUSED")
+		if build_mode:
 			music_expected_playing = false
 			if music_player != null: music_player.stream_paused = true
-		else: _resume_music()
 		return
 	if not started and shop_open:
 		if event is InputEventKey and event.pressed and not event.echo and (event.keycode == KEY_ESCAPE or event.keycode == KEY_S):
@@ -478,6 +540,9 @@ func _input(event: InputEvent) -> void:
 			_shop_click(event.position); return
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
+		if started and _camera_mode() == "behind" and not build_mode:
+			if event.keycode == KEY_LEFT or event.keycode == KEY_A: _move_runner_lane(-1); return
+			if event.keycode == KEY_RIGHT or event.keycode == KEY_D: _move_runner_lane(1); return
 		if not started and event.keycode == KEY_S:
 			shop_open = true; return
 		if not started and event.keycode == KEY_MINUS:
@@ -546,8 +611,36 @@ func _input(event: InputEvent) -> void:
 			var tier_touch_choice: int = _difficulty_choice_at(menu_position)
 			if tier_touch_choice >= 0: _choose_difficulty(tier_touch_choice); return
 			if _play_button_rect().has_point(menu_position): _start_run()
+		elif _camera_mode() == "behind":
+			touch_start = event.position; touch_tracking = true
 		elif _touch_jump_rect().has_point(event.position): jump_buffer = 0.12
 		elif _touch_dash_rect().has_point(event.position): _start_dash()
+	if event is InputEventScreenDrag and started and _camera_mode() == "behind" and touch_tracking:
+		var drag_delta: Vector2 = event.position - touch_start
+		if absf(drag_delta.x) >= 54.0:
+			_move_runner_lane(1 if drag_delta.x > 0.0 else -1); touch_tracking = false
+		elif drag_delta.y <= -54.0:
+			jump_buffer = 0.12; touch_tracking = false
+		elif drag_delta.y >= 54.0:
+			_start_dash(); touch_tracking = false
+	if event is InputEventScreenTouch and not event.pressed and started and _camera_mode() == "behind":
+		if touch_tracking:
+			if event.position.x < get_viewport_rect().size.x * 0.5: jump_buffer = 0.12
+			else: _start_dash()
+		touch_tracking = false
+
+func _move_runner_lane(direction: int) -> void:
+	runner_lane = clampi(runner_lane + direction, -1, 1)
+	message = "LANE %s" % (["LEFT", "CENTRE", "RIGHT"][runner_lane + 1]); message_time = 0.35
+
+func _current_beat() -> float:
+	return maxf(0.0, (player.x - START_X) / maxf(1.0, _beat_width()))
+
+func _camera_mode() -> String:
+	var beat := _current_beat()
+	for section in level.get("camera_sections", []):
+		if beat >= float(section["start_beat"]) and beat < float(section["end_beat"]): return str(section["mode"])
+	return "side"
 
 func _start_run() -> void:
 	if not started:
@@ -561,7 +654,7 @@ func _reset_run_stats() -> void:
 	run_diamonds_earned = 0; run_stars_collected = 0; run_perfect_jumps = 0; run_good_jumps = 0; run_jump_attempts = 0; run_hits = 0; run_dashes = 0; run_best_combo = 0; trail_particles.clear()
 
 func _level_choice_rect(index: int) -> Rect2:
-	return Rect2(70.0 + index * 395.0, 150.0, 360.0, 360.0)
+	return Rect2(70.0 + float(index % 2) * 590.0, 162.0 + float(index / 2) * 178.0, 550.0, 158.0)
 
 func _level_choice_at(pos: Vector2) -> int:
 	for i in range(LEVEL_COUNT):
@@ -569,7 +662,7 @@ func _level_choice_at(pos: Vector2) -> int:
 	return -1
 
 func _difficulty_choice_rect(index: int) -> Rect2:
-	return Rect2(358.0 + float(index) * 188.0, 520.0, 164.0, 38.0)
+	return Rect2(358.0 + float(index) * 188.0, 538.0, 164.0, 38.0)
 
 func _difficulty_choice_at(pos: Vector2) -> int:
 	for i in range(3):
@@ -577,7 +670,7 @@ func _difficulty_choice_at(pos: Vector2) -> int:
 	return -1
 
 func _play_button_rect() -> Rect2:
-	return Rect2(490.0, 570.0, 300.0, 50.0)
+	return Rect2(490.0, 592.0, 300.0, 50.0)
 
 func _choose_difficulty(index: int) -> void:
 	if index < 0: return
@@ -606,7 +699,7 @@ func _return_to_menu() -> void:
 	message = "SELECT A LEVEL"; message_time = 1.0
 
 func _load_progress() -> void:
-	unlocked_level = 0; difficulty_unlocked = [0, 0, 0]; best_scores = [0, 0, 0, 0, 0, 0, 0, 0, 0]; diamonds = 0; owned_skins = ["classic"]; equipped_skin = "classic"
+	unlocked_level = 0; difficulty_unlocked = [0, 0, 0, 0]; best_scores = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; diamonds = 0; owned_skins = ["classic"]; equipped_skin = "classic"
 	if not OS.has_feature("web"): return
 	var raw: Variant = JavaScriptBridge.eval("localStorage.getItem('neon_twice_progress') || ''")
 	if not raw is String or str(raw).is_empty(): return
@@ -669,11 +762,11 @@ func _finish_menu_hit(pos: Vector2) -> bool:
 
 func _touch_jump_rect() -> Rect2:
 	var screen_size := get_viewport_rect().size
-	return Rect2(0.0, screen_size.y * 0.62, screen_size.x * 0.55, screen_size.y * 0.38)
+	return Rect2(0.0, screen_size.y * 0.24, screen_size.x * 0.55, screen_size.y * 0.76)
 
 func _touch_dash_rect() -> Rect2:
 	var screen_size := get_viewport_rect().size
-	return Rect2(screen_size.x * 0.55, screen_size.y * 0.62, screen_size.x * 0.45, screen_size.y * 0.38)
+	return Rect2(screen_size.x * 0.55, screen_size.y * 0.24, screen_size.x * 0.45, screen_size.y * 0.76)
 
 func _shop_click(pos: Vector2) -> void:
 	var canvas_position: Vector2 = _canvas_pointer_position(pos)
@@ -1057,6 +1150,7 @@ func _check_objects() -> void:
 	for object in objects + runtime_objects:
 		var id: String = object["id"]; var kind: String = object["type"]
 		if consumed.has(id): continue
+		if object["properties"].has("track_lane"): continue
 		if invulnerability > 0.0 and (kind == "spike" or kind == "block" or kind == "saw"): continue
 		var rect := _object_rect(object)
 		if not body.intersects(rect): continue
@@ -1071,6 +1165,23 @@ func _check_objects() -> void:
 			"speed_ring": score += 75; consumed[id] = true; speed_boost_multiplier = float(object["properties"].get("multiplier", 1.25)); speed_until = run_time + float(object["properties"].get("duration_beats", 4.0)) * _music_beat(); _combo_event("SPEED UP"); message = "SPEED RING • x%.2f" % speed_boost_multiplier; message_time = 1.0; _spawn_burst(rect.position + rect.size * 0.5, Color("#f5e27e"), 18)
 			"star": score += 75; diamonds += 1; run_diamonds_earned += 1; run_stars_collected += 1; consumed[id] = true; _combo_event("COLLECT"); _spawn_burst(rect.position + rect.size * 0.5, Color("#f5e27e"), 10); _save_progress()
 			"checkpoint": checkpoint_index = max(checkpoint_index, checkpoint_beats.find(float(object["beat"])))
+
+func _check_behind_objects() -> void:
+	var current_beat := _current_beat()
+	for object in objects:
+		var id: String = str(object["id"])
+		if consumed.has(id) or not object["properties"].has("track_lane"): continue
+		var object_beat := float(object["beat"])
+		if current_beat < object_beat - 0.16: continue
+		if current_beat > object_beat + 0.45: consumed[id] = true; continue
+		if int(object["properties"]["track_lane"]) != runner_lane: continue
+		var action := str(object["properties"].get("behind_action", "lane"))
+		var safe := (action == "jump" and not _is_grounded()) or (action == "dash" and dash_left > 0.0)
+		consumed[id] = true
+		if safe:
+			score += 80; _combo_event("CORE DODGE")
+		else:
+			_take_hit("ARCADE LANE COLLISION")
 
 func _check_triggers() -> void:
 	for trigger in triggers:
@@ -1165,7 +1276,13 @@ func _run_accuracy_percent() -> int:
 	return int(round(float(run_perfect_jumps + run_good_jumps) / float(run_jump_attempts) * 100.0))
 
 func _is_grounded() -> bool:
-	if gravity_sign < 0.0: return false
+	if gravity_sign < 0.0:
+		if player.y <= 91.0: return true
+		for ceiling_platform in objects:
+			if (ceiling_platform["type"] == "moving_platform" or ceiling_platform["type"] == "platform") and str(ceiling_platform["properties"].get("surface", "floor")) == "ceiling":
+				var ceiling_rect := _object_rect(ceiling_platform)
+				if absf(player.y - ceiling_rect.end.y) < 8.0 and player.x + PLAYER_SIZE.x > ceiling_rect.position.x and player.x < ceiling_rect.end.x: return true
+		return false
 	if player.y + PLAYER_SIZE.y >= FLOOR_Y - 1.0: return true
 	for platform in objects:
 		if platform["type"] == "moving_platform" or platform["type"] == "platform":
@@ -1214,9 +1331,10 @@ func _object_y(object: Dictionary) -> float:
 
 func _object_rect(object: Dictionary) -> Rect2:
 	var kind: String = object["type"]; var x := _object_x(object); var y := _object_y(object); var slam_y := (slam_offset if chase_started else 0.0) + float(ghost_wave_offsets.get(object["id"], {}).get("offset", 0.0))
+	var ceiling_surface := str(object["properties"].get("surface", "floor")) == "ceiling"
 	match kind:
-		"spike": return Rect2(x - 20, FLOOR_Y - 54 + slam_y, 40, 54)
-		"block": return Rect2(x - 22, FLOOR_Y - 82 * float(object["properties"].get("height", 1.0)) + slam_y, 44, 82 * float(object["properties"].get("height", 1.0)))
+		"spike": return Rect2(x - 20, 90.0 + slam_y, 40, 54) if ceiling_surface else Rect2(x - 20, FLOOR_Y - 54 + slam_y, 40, 54)
+		"block": return Rect2(x - 22, 90.0 + slam_y, 44, 82 * float(object["properties"].get("height", 1.0))) if ceiling_surface else Rect2(x - 22, FLOOR_Y - 82 * float(object["properties"].get("height", 1.0)) + slam_y, 44, 82 * float(object["properties"].get("height", 1.0)))
 		"saw":
 			var saw_radius: float = float(object["properties"].get("radius", 30.0))
 			return Rect2(x - saw_radius, y - saw_radius * 2.0, saw_radius * 2.0, saw_radius * 2.0)
@@ -1224,7 +1342,7 @@ func _object_rect(object: Dictionary) -> Rect2:
 		"moving_platform": return Rect2(x - 45, y - 15 + slam_y, 90, 30)
 		"platform":
 			var platform_width: float = 62.0 * float(object["properties"].get("width", 2.0))
-			return Rect2(x - platform_width, y - 10 + slam_y, platform_width * 2.0, 20)
+			return Rect2(x - platform_width, 90.0 + slam_y, platform_width * 2.0, 20) if ceiling_surface else Rect2(x - platform_width, y - 10 + slam_y, platform_width * 2.0, 20)
 		"gravity_portal": return Rect2(x - 28, FLOOR_Y - 170 + slam_y, 56, 170)
 		"speed_ring", "star": return Rect2(x - 18, y - 18 + slam_y, 36, 36)
 		"checkpoint": return Rect2(x - 16, FLOOR_Y - 100 + slam_y, 32, 100)
@@ -1316,6 +1434,8 @@ func _draw() -> void:
 	if quiz_active or quiz_feedback_time > 0.0: _draw_quiz()
 	if build_mode: _draw_builder()
 	if finished: _draw_finish()
+	if started and not paused and not finished and not build_mode: _draw_pause_control()
+	if paused: _draw_pause_overlay()
 	if flash > 0.0: draw_rect(Rect2(Vector2.ZERO, get_viewport_rect().size), Color(1.0, 0.35, 0.5, flash * 0.35))
 	if slam_flash > 0.0: draw_rect(Rect2(Vector2.ZERO, get_viewport_rect().size), Color(1.0, 0.88, 0.55, slam_flash * 0.12))
 
@@ -1625,6 +1745,9 @@ func _draw_sparkle(pos: Vector2, size: float, color: Color) -> void:
 	draw_colored_polygon(PackedVector2Array([pos + Vector2(0, -size), pos + Vector2(size * 0.35, -size * 0.35), pos + Vector2(size, 0), pos + Vector2(size * 0.35, size * 0.35), pos + Vector2(0, size), pos + Vector2(-size * 0.35, size * 0.35), pos + Vector2(-size, 0), pos + Vector2(-size * 0.35, -size * 0.35)]), color)
 
 func _draw_world() -> void:
+	if started and _camera_mode() == "behind" and not build_mode:
+		_draw_behind_world()
+		return
 	var screen_size := get_viewport_rect().size
 	var fill_width: float = max(screen_size.x, VIEW.x)
 	var fill_height: float = max(screen_size.y, VIEW.y)
@@ -1645,6 +1768,55 @@ func _draw_world() -> void:
 		draw_arc(center, 38.0 + sin(background_time * 8.0) * 3.0, 0.0, TAU, 32, shield_color, 4.0)
 	if crash_timer > 0.0:
 		draw_circle(player - Vector2(camera_x, 0) + PLAYER_SIZE * 0.5, 42.0 + sin(background_time * 24.0) * 5.0, Color(1.0, 0.25, 0.45, 0.12))
+
+func _draw_behind_world() -> void:
+	var horizon := Vector2(VIEW.x * 0.5, 205.0)
+	var road_bottom_y := VIEW.y + 40.0
+	draw_colored_polygon(PackedVector2Array([horizon + Vector2(-75, 0), horizon + Vector2(75, 0), Vector2(VIEW.x + 150, road_bottom_y), Vector2(-150, road_bottom_y)]), Color("#121a3c"))
+	for lane_edge in [-1.5, -0.5, 0.5, 1.5]:
+		draw_line(horizon + Vector2(lane_edge * 45.0, 0), Vector2(VIEW.x * 0.5 + lane_edge * 245.0, road_bottom_y), Color(0.35, 0.85, 1.0, 0.46), 3.0)
+	for depth in range(1, 9):
+		var t := float(depth) / 9.0
+		var y := lerpf(horizon.y, road_bottom_y, t * t)
+		draw_line(Vector2(120.0, y), Vector2(VIEW.x - 120.0, y), Color(0.55, 0.35, 0.95, 0.13 + t * 0.2), 2.0)
+	var current_beat := _current_beat()
+	for object in objects:
+		if consumed.has(object["id"]) or not object["properties"].has("track_lane"): continue
+		var beats_ahead := float(object["beat"]) - current_beat
+		var telegraph := float(object["properties"].get("telegraph_beats", 3.0))
+		if beats_ahead < -0.4 or beats_ahead > maxf(12.0, telegraph): continue
+		var depth_t := clampf(1.0 - beats_ahead / 12.0, 0.0, 1.0)
+		var perspective := depth_t * depth_t
+		var lane := float(object["properties"]["track_lane"])
+		var object_pos := Vector2(lerpf(horizon.x, VIEW.x * 0.5 + lane * 245.0, perspective), lerpf(horizon.y, road_bottom_y - 74.0, perspective))
+		var size := lerpf(9.0, 74.0, perspective)
+		var action := str(object["properties"].get("behind_action", "lane"))
+		var color := Color("#f5e27e") if action == "jump" else (Color("#b06cff") if action == "dash" else Color("#ed496f"))
+		draw_rect(Rect2(object_pos - Vector2(size * 0.5, size), Vector2(size, size)), Color(color, 0.38 + perspective * 0.6))
+		draw_rect(Rect2(object_pos - Vector2(size * 0.5, size), Vector2(size, size)), color, false, maxf(2.0, size * 0.08))
+		if beats_ahead <= telegraph:
+			draw_string(ThemeDB.fallback_font, object_pos + Vector2(-45.0, -size - 12.0), action.to_upper(), HORIZONTAL_ALIGNMENT_CENTER, 90.0, 13, Color("#fff1a8"))
+	if current_beat >= 160.0:
+		draw_circle(horizon + Vector2(0, -24), 56.0 + _beat_pulse() * 8.0, Color(0.78, 0.20, 0.62, 0.25))
+		draw_arc(horizon + Vector2(0, -24), 48.0, background_time, background_time + TAU * 0.82, 28, Color("#ff9dbc"), 7.0)
+		draw_string(ThemeDB.fallback_font, Vector2(horizon.x - 100.0, 116.0), "CORE SENTINEL", HORIZONTAL_ALIGNMENT_CENTER, 200.0, 18, Color("#f5e27e"))
+	var player_center := Vector2(VIEW.x * 0.5 + runner_lane * 245.0, VIEW.y - 102.0)
+	_draw_player(player_center)
+	_draw_beat_feedback(player_center)
+	draw_string(ThemeDB.fallback_font, Vector2(0, VIEW.y - 26.0), "←/→ OR SWIPE TO CHANGE LANE  •  SWIPE UP JUMP  •  SWIPE DOWN DASH", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 14, Color("#a8ffd0"))
+
+func _draw_pause_overlay() -> void:
+	draw_rect(Rect2(Vector2.ZERO, VIEW), Color(0.02, 0.03, 0.10, 0.86))
+	draw_string(ThemeDB.fallback_font, Vector2(0, 224), pause_reason if not pause_reason.is_empty() else "PAUSED", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 42, Color("#7cf5ff"))
+	for item in [[_pause_resume_rect(), "RESUME"], [_pause_quit_rect(), "QUIT LEVEL"]]:
+		var rect: Rect2 = item[0]
+		draw_rect(rect, Color("#26336e")); draw_rect(rect, Color("#a8ffd0"), false, 3.0)
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, 43), str(item[1]), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 22, Color("#ffffff"))
+
+func _draw_pause_control() -> void:
+	var pause_rect := _pause_button_rect()
+	draw_rect(pause_rect, Color("#26336e")); draw_rect(pause_rect, Color("#7cf5ff"), false, 2.0)
+	draw_string(ThemeDB.fallback_font, pause_rect.position + Vector2(0, 31), "Ⅱ  PAUSE", HORIZONTAL_ALIGNMENT_CENTER, pause_rect.size.x, 15, Color("#ffffff"))
 
 func _draw_beat_feedback(center: Vector2) -> void:
 	var pulse := _beat_pulse()
@@ -1741,7 +1913,10 @@ func _draw_object(object: Dictionary) -> void:
 			draw_string(ThemeDB.fallback_font, Vector2(center.x - 14.0, rect.position.y - 31.0), "!", HORIZONTAL_ALIGNMENT_CENTER, 28.0, 16, Color(1.0, 0.90, 0.58, telegraph_alpha))
 	match kind:
 		"spike":
-			draw_colored_polygon(PackedVector2Array([Vector2(rect.position.x, slam_floor), Vector2(center.x, rect.position.y), Vector2(rect.end.x, slam_floor)]), Color("#ed496f"))
+			if str(object["properties"].get("surface", "floor")) == "ceiling":
+				draw_colored_polygon(PackedVector2Array([Vector2(rect.position.x, rect.position.y), Vector2(center.x, rect.end.y), Vector2(rect.end.x, rect.position.y)]), Color("#ed496f"))
+			else:
+				draw_colored_polygon(PackedVector2Array([Vector2(rect.position.x, slam_floor), Vector2(center.x, rect.position.y), Vector2(rect.end.x, slam_floor)]), Color("#ed496f"))
 			draw_line(Vector2(center.x - 7, rect.position.y + 18), Vector2(center.x + 7, rect.position.y + 30), Color("#ffd6e2"), 4.0)
 		"block":
 			draw_rect(rect, Color("#ed496f")); draw_rect(rect.grow(-7.0), Color("#8d2348"), false, 4.0); draw_circle(rect.get_center(), 8.0, Color("#ffb6c9"))
@@ -1784,6 +1959,10 @@ func _draw_hud() -> void:
 	draw_string(ThemeDB.fallback_font, Vector2(beat_rect.position.x, beat_rect.position.y + 25.0), "BEAT", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#a9b8ef"))
 	if quiz_streak > 0: draw_string(ThemeDB.fallback_font, Vector2(470, 52), "QUIZ STREAK x%d" % quiz_streak, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#a8ffd0"))
 	if run_time < speed_until and started: draw_string(ThemeDB.fallback_font, Vector2(470, 80), "SPEED BOOST x%.2f  %.1fs" % [speed_boost_multiplier, max(0.0, speed_until - run_time)], HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#a8ffd0"))
+	if gravity_sign < 0.0 and gravity_until > run_time:
+		var gravity_beats_left := (gravity_until - run_time) / _music_beat()
+		var gravity_color := Color("#ff9dbc") if gravity_beats_left <= 2.0 else Color("#a8ffd0")
+		draw_string(ThemeDB.fallback_font, Vector2(470, 105), "ANTI-GRAVITY %.1f BEATS" % gravity_beats_left, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, gravity_color)
 	if audio_resync_time > 0.0: draw_string(ThemeDB.fallback_font, Vector2(0, 145), "RESYNCING BEAT %.1f" % audio_resync_time, HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 19, Color("#a8ffd0"))
 	if message_time > 0.0: draw_string(ThemeDB.fallback_font, Vector2(VIEW.x / 2 - 200, 145), message, HORIZONTAL_ALIGNMENT_CENTER, 400, 22, Color("#ffffff"))
 	if ghost_final_started:
@@ -1816,14 +1995,12 @@ func _draw_title() -> void:
 		var card_color: Color = Color("#11183e") if locked else (Color("#26336e") if selected else Color("#182450"))
 		draw_rect(card, card_color); draw_rect(card, Color("#70789f") if locked else (Color("#a8ffd0") if selected else Color("#7cf5ff")), false, 4.0)
 		var meta: Dictionary = campaign_catalog[i]
-		draw_string(ThemeDB.fallback_font, card.position + Vector2(22, 42), "LEVEL %02d" % (i + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color("#a9b8ef"))
-		draw_string(ThemeDB.fallback_font, card.position + Vector2(22, 82), str(meta["name"]), HORIZONTAL_ALIGNMENT_LEFT, card.size.x - 44, 25, Color("#ffffff") if not locked else Color("#7f86a9"))
-		draw_string(ThemeDB.fallback_font, card.position + Vector2(22, 120), str(meta["subtitle"]), HORIZONTAL_ALIGNMENT_LEFT, card.size.x - 44, 16, Color("#cbbaff") if not locked else Color("#626987"))
-		draw_string(ThemeDB.fallback_font, card.position + Vector2(22, 182), "%d BPM" % int(meta["bpm"]), HORIZONTAL_ALIGNMENT_LEFT, -1, 19, Color("#7cf5ff") if not locked else Color("#626987"))
-		draw_string(ThemeDB.fallback_font, card.position + Vector2(22, 218), str(meta["track"]).get_file(), HORIZONTAL_ALIGNMENT_LEFT, card.size.x - 44, 14, Color("#a9b8ef") if not locked else Color("#626987"))
+		draw_string(ThemeDB.fallback_font, card.position + Vector2(18, 30), "LEVEL %02d  •  %d BPM" % [i + 1, int(meta["bpm"])], HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#a9b8ef"))
+		draw_string(ThemeDB.fallback_font, card.position + Vector2(18, 63), str(meta["name"]), HORIZONTAL_ALIGNMENT_LEFT, card.size.x - 36, 22, Color("#ffffff") if not locked else Color("#7f86a9"))
+		draw_string(ThemeDB.fallback_font, card.position + Vector2(18, 90), str(meta["subtitle"]), HORIZONTAL_ALIGNMENT_LEFT, card.size.x - 36, 14, Color("#cbbaff") if not locked else Color("#626987"))
 		var best: int = int(best_scores[i * 3 + selected_difficulty_index])
-		draw_string(ThemeDB.fallback_font, card.position + Vector2(22, 270), "%s BEST %06d" % [str(LevelData.DIFFICULTIES[selected_difficulty_index]).to_upper(), best], HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#f5e27e") if not locked else Color("#626987"))
-		draw_string(ThemeDB.fallback_font, card.position + Vector2(22, 320), "LOCKED" if locked else ("SELECTED" if selected else "UNLOCKED"), HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#ff9dbc") if locked else Color("#a8ffd0"))
+		draw_string(ThemeDB.fallback_font, card.position + Vector2(18, 125), "%s BEST %06d" % [str(LevelData.DIFFICULTIES[selected_difficulty_index]).to_upper(), best], HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#f5e27e") if not locked else Color("#626987"))
+		draw_string(ThemeDB.fallback_font, card.position + Vector2(390, 125), "LOCKED" if locked else ("SELECTED" if selected else "UNLOCKED"), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#ff9dbc") if locked else Color("#a8ffd0"))
 	for tier in range(3):
 		var tier_rect: Rect2 = _difficulty_choice_rect(tier)
 		var tier_locked: bool = tier > int(difficulty_unlocked[selected_level_index])
@@ -1834,7 +2011,7 @@ func _draw_title() -> void:
 	var play_rect: Rect2 = _play_button_rect()
 	draw_rect(play_rect, Color("#55d68a")); draw_rect(play_rect, Color("#a8ffd0"), false, 3.0)
 	draw_string(ThemeDB.fallback_font, play_rect.position + Vector2(0, 33), "PLAY %s" % str(LevelData.DIFFICULTIES[selected_difficulty_index]).to_upper(), HORIZONTAL_ALIGNMENT_CENTER, play_rect.size.x, 21, Color("#102d36"))
-	draw_string(ThemeDB.fallback_font, Vector2(0, 642), "TAP A LEVEL, CHOOSE A DIFFICULTY, THEN PLAY  •  ARROWS SELECT LEVEL  •  UP/DOWN DIFFICULTY", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 15, Color("#ffffff"))
+	draw_string(ThemeDB.fallback_font, Vector2(0, 672), "TAP A LEVEL, CHOOSE A DIFFICULTY, THEN PLAY  •  ARROWS SELECT LEVEL  •  UP/DOWN DIFFICULTY", HORIZONTAL_ALIGNMENT_CENTER, VIEW.x, 15, Color("#ffffff"))
 
 func _draw_shop() -> void:
 	draw_string(ThemeDB.fallback_font, Vector2(55, 132), "CHOOSE YOUR CUBE • PRESS S OR ESC TO RETURN", HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color("#cbbaff"))

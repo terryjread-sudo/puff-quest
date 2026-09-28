@@ -19,7 +19,7 @@
     const engine = new Engine($GODOT_CONFIG);
     const cacheBustedPack = `index.pck?v=zombie-villager-6`;
     let wasLandscape = window.innerWidth >= window.innerHeight;
-    let orientationReload = null;
+    window.neonTwiceOrientationPauseToken = 0;
 
     function redrawViewport() {
       canvas.style.width = `${window.innerWidth}px`;
@@ -27,8 +27,7 @@
       const isLandscape = window.innerWidth >= window.innerHeight;
       if (isLandscape !== wasLandscape) {
         wasLandscape = isLandscape;
-        window.clearTimeout(orientationReload);
-        orientationReload = window.setTimeout(() => window.location.reload(), 180);
+        window.neonTwiceOrientationPauseToken += 1;
       }
     }
 

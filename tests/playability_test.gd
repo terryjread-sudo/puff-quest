@@ -35,7 +35,7 @@ func _run_tests() -> void:
 	if LevelData.boss_attack_interval(2, 0) <= LevelData.boss_attack_interval(2, 1) or LevelData.boss_attack_interval(2, 2) >= LevelData.boss_attack_interval(2, 1):
 		_fail("Boss attack intervals do not scale with difficulty")
 	var easy_unlocks: Array = LevelData.normalize_difficulty_unlocks([1, 2, 99])
-	if easy_unlocks != [1, 2, 2]:
+	if easy_unlocks != [1, 2, 2, 0]:
 		_fail("Difficulty unlock values were not normalized safely")
 	var migrated_scores: Array = LevelData.migrate_best_scores([101, 202, 303], [])
 	if migrated_scores[1] != 101 or migrated_scores[4] != 202 or migrated_scores[7] != 303:
@@ -43,12 +43,28 @@ func _run_tests() -> void:
 	var stored_scores: Array = LevelData.migrate_best_scores([], [1, 2, 3, 4, 5, 6, 7, 8, 9])
 	if stored_scores[0] != 1 or stored_scores[8] != 9:
 		_fail("Tier-specific scores were not restored")
+	if stored_scores.size() != 12:
+		_fail("Score migration did not reserve Level 4 difficulty slots")
+	var level_4: Dictionary = LevelData.campaign_level(3, 1)
+	if level_4["camera_sections"].size() != 4:
+		_fail("Level 4 should have four side/behind camera sections")
+	var behind_sections := 0
+	for section in level_4["camera_sections"]:
+		if section["mode"] == "behind": behind_sections += 1
+	if behind_sections != 2:
+		_fail("Level 4 should contain two behind-camera sections")
+	var gravity_report: Dictionary = LevelData.difficulty_playability_report(3, 1)
+	if gravity_report["gravity_routes"].is_empty() or not bool(gravity_report["gravity_routes"][0]["pass"]):
+		_fail("Level 4 gravity route is incomplete")
 
 	var game_scene: PackedScene = load("res://main.tscn") as PackedScene
 	var game: Node = game_scene.instantiate()
 	root.add_child(game)
 	await process_frame
 	var game_canvas: Node2D = game as Node2D
+	var viewport_height: float = game.get_viewport_rect().size.y
+	if absf(game._touch_jump_rect().size.y - viewport_height * 0.76) > 0.1 or absf(game._touch_dash_rect().size.y - viewport_height * 0.76) > 0.1:
+		_fail("Touch jump and dash zones were not doubled vertically")
 	var shop_button: Rect2 = game._shop_button_rect()
 	var shop_button_viewport_point: Vector2 = game_canvas.get_canvas_transform() * (shop_button.position + shop_button.size * 0.5)
 	if not game._shop_button_hit(shop_button_viewport_point):
@@ -86,6 +102,19 @@ func _run_tests() -> void:
 	game._finish()
 	if game.difficulty_unlocked[0] != 2 or game.best_scores[1] != 222:
 		_fail("Completing Normal should unlock Hard and record a separate score")
+	game._apply_level(LevelData.campaign_level(2))
+	game._apply_level(LevelData.campaign_level(3))
+	game.player.x = 150.0 + 60.0 * game._beat_width()
+	if game._camera_mode() != "behind":
+		_fail("Level 4 did not switch to behind-camera mode")
+	game.started = true
+	game.run_time = 7.0
+	game._set_paused(true, "TEST")
+	game._process(0.1)
+	if game.run_time != 7.0:
+		_fail("Paused gameplay continued advancing")
+	game._set_paused(false)
+	game.started = false
 	game._apply_level(LevelData.campaign_level(2))
 
 	# Main floor is grounded and must be vulnerable.
